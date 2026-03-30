@@ -30,7 +30,6 @@ class cWebsocketStatusMonitor : public cStatus
 private:
   EventQueue & queue;
 protected:
-  void SendInitialState(struct mg_connection * c, const DeviceEvent &ev);
   virtual void ChannelSwitch(const cDevice *Device, int ChannelNumber, bool LiveView) override
   {
     if (LiveView && Device && Device->IsPrimaryDevice())
