@@ -1,5 +1,4 @@
-#ifndef EVENTS_HPP
-#define EVENTS_HPP
+#pragma once
 
 #include <condition_variable>
 #include <mutex>
@@ -71,5 +70,3 @@ public:
         return std::nullopt; // Zeit abgelaufen, kein Event
     }
 };
-
-#endif
