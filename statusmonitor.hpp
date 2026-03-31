@@ -19,7 +19,7 @@ protected:
     void SetAudioTrack(int Index, const char *const *Tracks) override;
     void SetAudioChannel(int AudioChannel) override;
     void SetSubtitleTrack(int Index, const char *const *Tracks) override;
-    void OsdStatusMessage(const char *Message) override;
+    void OsdStatusMessage(eMessageType Type, const char *Message) override;
     void OsdChannel(const char *Text) override;
 
     void OsdClear(void);

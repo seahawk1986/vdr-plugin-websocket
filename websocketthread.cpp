@@ -209,9 +209,18 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
     json j;
     switch (ev.type)
     {
+    case eEventType::OsdClear:
+        dsyslog("websocket-plugin: Clear OSD");
+        ;
+        j["type"] = "osdmessage";
+        j["message"] = "";
+        j["priority"] = 0;
+        return j;
+
     case eEventType::OsdMessage:
         j["type"] = "osdmessage";
         j["message"] = ev.name;
+        j["priority"] = ev.number;
         return j;
 
     case eEventType::ChannelChange:

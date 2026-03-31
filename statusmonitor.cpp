@@ -70,10 +70,12 @@ void cWebsocketStatusMonitor::SetSubtitleTrack(int Index, const char *const *Tra
     queue.push(DeviceEvent(eEventType::SubtitleChange, Tracks && Tracks[Index] ? Tracks[Index] : "", "", Index));
 }
 
-void cWebsocketStatusMonitor::OsdStatusMessage(const char *Message)
+void cWebsocketStatusMonitor::OsdStatusMessage(eMessageType Type, const char *Message)
 {
     if (Message)
-        queue.push(DeviceEvent(eEventType::OsdMessage, Message));
+        queue.push(DeviceEvent(eEventType::OsdMessage, Message, "", Type));
+    else
+        queue.push(DeviceEvent(eEventType::OsdMessage, "", "", Type));
 }
 
 void cWebsocketStatusMonitor::OsdChannel(const char *Text)
