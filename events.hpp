@@ -12,6 +12,14 @@ enum class eEventType
     ReplayStart,
     ReplayStop,
     PluginStop,
+    TimerChange,
+    Recording,
+    VolumeChange,
+    AudioChannelChange,
+    AudioTrackChange,
+    SubtitleChange,
+    OsdMessage,
+    OsdChannel,
 };
 
 struct DeviceEvent
@@ -20,14 +28,10 @@ struct DeviceEvent
     std::string name;
     std::string fileName;
     int number;
+    bool status; // Für On/Off Zustände
 
-    DeviceEvent(eEventType t, std::string n, std::string f = "", int num = 0)
-        : type(t),
-          name(std::move(n)),
-          fileName(std::move(f)),
-          number(num)
-    {
-    }
+    DeviceEvent(eEventType t, std::string n = "", std::string f = "", int num = 0, bool s = false)
+        : type(t), name(std::move(n)), fileName(std::move(f)), number(num), status(s) {}
 };
 
 class EventQueue

@@ -58,7 +58,7 @@ DEFINES += -DPLUGIN_NAME_I18N='"$(PLUGIN)"' -DMG_ENABLE_LOG=0
 ### The object files (add further files here):
 
 
-OBJS = $(MONGOOSE_DIR)/mongoose.o $(PLUGIN).o
+OBJS = $(MONGOOSE_DIR)/mongoose.o statusmonitor.o websocketthread.o $(PLUGIN).o
 
 ### The main target:
 
