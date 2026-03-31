@@ -417,20 +417,6 @@ void cWebsocketThread::SendInitialState(struct mg_connection *c)
     json j;
     j["type"] = "initial_full_state";
 
-    cDevice *primary = cDevice::PrimaryDevice();
-    if (primary)
-    {
-        j["volume"] = cDevice::CurrentVolume();
-    }
-
-    LOCK_CHANNELS_READ;
-    const cChannel *channel = Channels->GetByNumber(cDevice::PrimaryDevice()->CurrentChannel());
-    if (channel)
-    {
-        DeviceEvent ev(eEventType::ChannelChange, channel->Name(), "", channel->Number());
-        j["current_display"] = BuildStatusJson(ev); // Nutzt deine EPG-Logik
-    }
-
     bool isAnythingRecording = false;
     int32_t nRecordings = 0;
     int32_t nTimers = 0;
@@ -449,6 +435,22 @@ void cWebsocketThread::SendInitialState(struct mg_connection *c)
     j["is_recording"] = isAnythingRecording;
     j["active_recordings"] = nRecordings;
     j["n_timer"] = nTimers;
+
+    cDevice *primary = cDevice::PrimaryDevice();
+    if (primary)
+    {
+        j["volume"] = cDevice::CurrentVolume();
+    }
+
+    {
+        LOCK_CHANNELS_READ;
+        const cChannel *channel = Channels->GetByNumber(cDevice::PrimaryDevice()->CurrentChannel());
+        if (channel)
+        {
+            DeviceEvent ev(eEventType::ChannelChange, channel->Name(), "", channel->Number());
+            j["current_display"] = BuildStatusJson(ev); // Nutzt deine EPG-Logik
+        }
+    }
 
     {
         cMutexLock ControlMutexLock;
@@ -496,11 +498,21 @@ void cWebsocketThread::SendInitialState(struct mg_connection *c)
         else
         {
             j["replaying"] = false;
-            LOCK_CHANNELS_READ;
-            const cChannel *channel = Channels->GetByNumber(cDevice::PrimaryDevice()->CurrentChannel());
-            if (channel)
+            std::string cName;
+            int cNum = 0;
             {
-                DeviceEvent ev(eEventType::ChannelChange, channel->Name(), "", channel->Number());
+                LOCK_CHANNELS_READ;
+                const cChannel *channel = Channels->GetByNumber(cDevice::PrimaryDevice()->CurrentChannel());
+                if (channel)
+                {
+                    cName = channel->Name();
+                    cNum = channel->Number();
+                }
+            }
+
+            if (cNum > 0)
+            {
+                DeviceEvent ev(eEventType::ChannelChange, cName, "", cNum);
                 j["current_display"] = BuildStatusJson(ev);
             }
         }
@@ -577,13 +589,14 @@ void cWebsocketThread::Action()
 
         if (optEv)
         {
-            dsyslog("websocket-plugin: got Event type %d from the Queue", (int)optEv->type);
             if (optEv->type == eEventType::PluginStop)
                 break;
+
             if (optEv->type == eEventType::ReplayStart)
                 isReplaying = true;
             else if (optEv->type == eEventType::ReplayStop || optEv->type == eEventType::ChannelChange)
                 isReplaying = false;
+
             BroadcastJson(*optEv);
         }
 
@@ -591,44 +604,36 @@ void cWebsocketThread::Action()
 
         if (isReplaying)
         {
-
-            auto now = std::chrono::steady_clock::now();
             if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastPosUpdate).count() >= 1000)
             {
                 int current = 0, total = 0;
-                bool play = true;
-                bool forward = true;
+                bool play = true, forward = true;
                 int speed = 0;
-                bool hasData = false;
                 double fps = 25.0;
+                bool hasData = false;
 
                 {
                     cMutexLock ControlMutexLock;
                     cControl *control = cControl::Control(ControlMutexLock);
                     if (control && control->GetIndex(current, total))
                     {
-                        // Replay mode
-                        // Play: true = running, false = pause
-                        // Forward: true if not rewinding
-                        // Speed: 1-3 is fast forwarding, -1 is normal replay
                         control->GetReplayMode(play, forward, speed);
-                        hasData = true;
-                        double fps = control->FramesPerSecond();
+                        fps = control->FramesPerSecond();
                         if (fps <= 0)
-                            fps = 25.0; // Fallback
+                            fps = 25.0;
+                        hasData = true;
                     }
                 }
 
                 if (hasData)
                 {
-                    json jpos;
-                    jpos["type"] = "pos";
-                    jpos["current"] = current / fps;
-                    jpos["total"] = total / fps;
-                    jpos["play"] = play; // true/false
-                    jpos["forward"] = forward;
-                    jpos["speed"] = speed; // Geschwindigkeit (0, 1, 2...)
-
+                    json jpos = {
+                        {"type", "pos"},
+                        {"current", (int)(current / fps)},
+                        {"total", (int)(total / fps)},
+                        {"play", play},
+                        {"forward", forward},
+                        {"speed", speed}};
                     std::string s = jpos.dump();
                     for (struct mg_connection *c = mgr.conns; c != NULL; c = c->next)
                         if (c->is_websocket)
@@ -641,18 +646,22 @@ void cWebsocketThread::Action()
         {
             if (std::chrono::duration_cast<std::chrono::seconds>(now - lastEpgUpdate).count() >= 60)
             {
-                LOCK_CHANNELS_READ;
-                const cDevice *primary = cDevice::PrimaryDevice();
-                if (primary)
+                std::string cName;
+                int cNum = 0;
                 {
-                    const cChannel *channel = Channels->GetByNumber(primary->CurrentChannel());
+                    LOCK_CHANNELS_READ;
+                    const cChannel *channel = Channels->GetByNumber(cDevice::PrimaryDevice()->CurrentChannel());
                     if (channel)
                     {
-                        // send a ChannelChange Event, to trigger BuildStatusJson
-                        DeviceEvent ev(eEventType::ChannelChange, channel->Name(), "", channel->Number());
-                        BroadcastJson(ev);
-                        dsyslog("websocket-plugin: sent EPG update to clients");
+                        cName = channel->Name();
+                        cNum = channel->Number();
                     }
+                }
+
+                if (cNum > 0)
+                {
+                    DeviceEvent ev(eEventType::ChannelChange, cName, "", cNum);
+                    BroadcastJson(ev);
                 }
                 lastEpgUpdate = now;
             }
