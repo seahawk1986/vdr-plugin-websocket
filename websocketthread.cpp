@@ -397,9 +397,17 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
         return j;
 
     case eEventType::VolumeChange:
-        j["type"] = "volume";
-        j["level"] = ev.number;
-        return j;
+    {
+
+        cDevice *primary = cDevice::PrimaryDevice();
+        if (primary)
+        {
+            j["volume"] = primary->IsMute() ? 0 : primary->CurrentVolume();
+            j["type"] = "volume";
+            return j;
+        }
+        break;
+    }
 
     default:
         j["type"] = "unknown";
@@ -436,10 +444,16 @@ void cWebsocketThread::SendInitialState(struct mg_connection *c)
     j["active_recordings"] = nRecordings;
     j["n_timer"] = nTimers;
 
-    cDevice *primary = cDevice::PrimaryDevice();
-    if (primary)
     {
-        j["volume"] = cDevice::CurrentVolume();
+        cDevice *primary = cDevice::PrimaryDevice();
+        if (primary)
+        {
+            j["volume"] = primary->IsMute() ? 0 : primary->CurrentVolume();
+        }
+        else
+        {
+            j["volume"] = cDevice::CurrentVolume();
+        }
     }
 
     {
