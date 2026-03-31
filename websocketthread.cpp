@@ -357,6 +357,7 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
         return j;
 
     case eEventType::TimerChange:
+        BroadcastTimerStatus();
         j["type"] = "timer";
         j["timer_name"] = ev.name;
         j["timer_id"] = ev.number;
@@ -378,6 +379,7 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
         return j;
 
     case eEventType::Recording:
+        BroadcastTimerStatus();
         j["type'"] = "recording";
         j["name"] = ev.name;
         j["filename"] = ev.fileName;
@@ -497,6 +499,40 @@ void cWebsocketThread::SendInitialState(struct mg_connection *c)
 
     std::string s = j.dump();
     mg_ws_send(c, s.c_str(), s.size(), WEBSOCKET_OP_TEXT);
+}
+
+void cWebsocketThread::BroadcastTimerStatus(void)
+{
+    json j;
+    j["type"] = "timer_status_update";
+
+    int32_t nRecordings = 0;
+    int32_t nTimers = 0;
+    bool isAnythingRecording = false;
+
+    {
+        LOCK_TIMERS_READ;
+        for (const cTimer *timer = Timers->First(); timer; timer = Timers->Next(timer))
+        {
+            if (timer->Recording())
+            {
+                isAnythingRecording = true;
+                nRecordings++;
+            }
+            nTimers++;
+        }
+    }
+
+    j["is_recording"] = isAnythingRecording;
+    j["active_recordings"] = nRecordings;
+    j["n_timer"] = nTimers;
+
+    std::string s = j.dump();
+    for (struct mg_connection *c = mgr.conns; c != NULL; c = c->next)
+    {
+        if (c->is_websocket)
+            mg_ws_send(c, s.c_str(), s.size(), WEBSOCKET_OP_TEXT);
+    }
 }
 
 void cWebsocketThread::BroadcastJson(const DeviceEvent &ev)

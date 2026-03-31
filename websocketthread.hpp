@@ -33,6 +33,7 @@ private:
     struct mg_mgr mgr;
     std::string GetLogoPath(const cChannel *channel);
     void BroadcastJson(const DeviceEvent &ev);
+    void BroadcastTimerStatus(void);
     json BuildStatusJson(const DeviceEvent &ev);
     std::string FindLogoInCache(const std::string &request);
     static void on_connect_callback(struct mg_connection *c, int ev, void *ev_data);
