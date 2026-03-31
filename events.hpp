@@ -20,6 +20,7 @@ enum class eEventType
     SubtitleChange,
     OsdMessage,
     OsdChannel,
+    OsdClear,
 };
 
 struct DeviceEvent
@@ -28,7 +29,7 @@ struct DeviceEvent
     std::string name;
     std::string fileName;
     int number;
-    bool status; // Für On/Off Zustände
+    bool status;
 
     DeviceEvent(eEventType t, std::string n = "", std::string f = "", int num = 0, bool s = false)
         : type(t), name(std::move(n)), fileName(std::move(f)), number(num), status(s) {}
@@ -63,7 +64,7 @@ public:
     std::optional<DeviceEvent> pop_with_timeout(int milliseconds)
     {
         std::unique_lock<std::mutex> lock(mutex);
-        // Wartet bis ein Event da ist ODER die Zeit abläuft
+        // wait for an event or timeout
         if (cv.wait_for(lock, std::chrono::milliseconds(milliseconds), [this]
                         { return !queue.empty(); }))
         {
@@ -71,6 +72,6 @@ public:
             queue.pop();
             return ev;
         }
-        return std::nullopt; // Zeit abgelaufen, kein Event
+        return std::nullopt; // return no event on timeout
     }
 };

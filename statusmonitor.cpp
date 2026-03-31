@@ -4,12 +4,12 @@
 cWebsocketStatusMonitor::cWebsocketStatusMonitor(EventQueue &q)
     : cStatus(), queue(q)
 {
-    isyslog("websocket-plugin: Monitor beim VDR registriert");
+    dsyslog("websocket-plugin: registered vdr status monitor");
 }
 
 cWebsocketStatusMonitor::~cWebsocketStatusMonitor()
 {
-    isyslog("websocket-plugin: Monitor abgemeldet");
+    dsyslog("websocket-plugin: cancelled status monitor");
 }
 
 void cWebsocketStatusMonitor::ChannelSwitch(const cDevice *Device, int ChannelNumber, bool LiveView)
@@ -20,7 +20,7 @@ void cWebsocketStatusMonitor::ChannelSwitch(const cDevice *Device, int ChannelNu
         const cChannel *channel = Channels->GetByNumber(ChannelNumber);
         if (channel)
         {
-            isyslog("websocket-plugin: Kanalwechsel auf %s", channel->Name());
+            dsyslog("websocket-plugin: switch to channel '%s'", channel->Name());
             queue.push(DeviceEvent(eEventType::ChannelChange, channel->Name(), "", channel->Number()));
         }
     }
@@ -30,24 +30,24 @@ void cWebsocketStatusMonitor::Replaying(const cControl *Control, const char *Nam
 {
     if (On && Name)
     {
-        isyslog("websocket-plugin: Replay Start: %s", Name);
+        dsyslog("websocket-plugin: Replay started: %s", Name);
         queue.push(DeviceEvent(eEventType::ReplayStart, Name, FileName ? FileName : "", 0));
     }
     else
     {
-        isyslog("websocket-plugin: Replay Stop");
+        dsyslog("websocket-plugin: Replay stopped");
         queue.push(DeviceEvent(eEventType::ReplayStop, "", "", 0));
     }
 }
 
 void cWebsocketStatusMonitor::TimerChange(const cTimer *Timer, eTimerChange Change)
 {
-    queue.push(DeviceEvent(eEventType::TimerChange, Timer->File(), "", (int)Change));
+    queue.push(DeviceEvent(eEventType::TimerChange, Timer->File(), "", Timer->Id(), (Change == tcAdd) ? true : false));
 }
 
 void cWebsocketStatusMonitor::Recording(const cDevice *Device, const char *Name, const char *FileName, bool On)
 {
-    queue.push(DeviceEvent(eEventType::Recording, Name ? Name : "", FileName ? FileName : "", 0, On));
+    queue.push(DeviceEvent(eEventType::Recording, Name ? Name : "", FileName ? FileName : "", Device->DeviceNumber(), On));
 }
 
 void cWebsocketStatusMonitor::SetVolume(int Volume, bool Absolute)
@@ -78,8 +78,11 @@ void cWebsocketStatusMonitor::OsdStatusMessage(const char *Message)
 
 void cWebsocketStatusMonitor::OsdChannel(const char *Text)
 {
-    if (Text)
-    {
-        queue.push(DeviceEvent(eEventType::OsdChannel, Text));
-    }
+    queue.push(DeviceEvent(eEventType::OsdChannel, Text ? Text : ""));
+}
+
+void cWebsocketStatusMonitor::OsdClear()
+{
+    dsyslog("osd cleared");
+    queue.push(DeviceEvent(eEventType::OsdClear));
 }

@@ -2,8 +2,32 @@
 #include <vdr/plugin.h>
 #include <vdr/menu.h>
 
-cWebsocketThread::cWebsocketThread(EventQueue &q, int p)
-    : cThread("websocket-worker"), queue(q), port(p) {}
+#include <sys/stat.h>
+#include <unistd.h>
+#include <strings.h> // for strcasecmp
+#include <dirent.h>
+
+int cWebsocketThread::GetClientCount()
+{
+    int count = 0;
+    // count websocket connections
+    for (struct mg_connection *c = mgr.conns; c != NULL; c = c->next)
+    {
+        if (c->is_websocket)
+        {
+            count++;
+        }
+    }
+    return count;
+}
+
+bool isEqualCaseInsensitive(const std::string &a, const std::string &b)
+{
+    return strcasecmp(a.c_str(), b.c_str()) == 0;
+}
+
+cWebsocketThread::cWebsocketThread(EventQueue &q, int p, std::string ld)
+    : cThread("websocket-worker"), queue(q), port(p), logoDir(std::move(ld)) {}
 
 cWebsocketThread::~cWebsocketThread()
 {
@@ -15,12 +39,159 @@ void cWebsocketThread::StopThread()
     Cancel();
 }
 
+void cWebsocketThread::UpdateLogoCache()
+{
+    std::lock_guard<std::mutex> lock(cacheMutex);
+    logoCache.clear();
+    DIR *dir = opendir(logoDir.c_str());
+    if (!dir)
+        return;
+
+    struct dirent *ent;
+    while ((ent = readdir(dir)) != NULL)
+    {
+        // Check both regular files and symbolic links
+        if (ent->d_type == DT_REG || ent->d_type == DT_LNK)
+        {
+            std::string fileName = ent->d_name;      // original filename
+            std::string lowFile = toLower(fileName); // use lower case for the key
+
+            size_t lastDot = lowFile.find_last_of(".");
+            if (lastDot == std::string::npos)
+                continue;
+
+            std::string ext = lowFile.substr(lastDot);
+            // process only those extensions:
+            if (ext == ".png" || ext == ".svg" || ext == ".jpg" || ext == ".jpeg")
+            {
+                std::string nameOnly = lowFile.substr(0, lastDot);
+
+                // 1. Key: full name in lower case ("das erste.png")
+                logoCache[lowFile] = fileName;
+
+                // 2. Key: name without extension in lower case ("das erste")
+                logoCache[nameOnly] = fileName;
+
+                // 3. Key: replace spaces with underscores ("das_erste.png" und "das_erste")
+                std::string sanitized = nameOnly;
+                std::replace(sanitized.begin(), sanitized.end(), ' ', '_');
+
+                logoCache[sanitized] = fileName;
+                logoCache[sanitized + ext] = fileName;
+            }
+        }
+    }
+    closedir(dir);
+    dsyslog("websocket-plugin: Created logo cache with %zu keys", logoCache.size());
+}
+
+std::string cWebsocketThread::FindLogoInCache(const std::string &request)
+{
+    std::lock_guard<std::mutex> lock(cacheMutex);
+    std::string search = toLower(request);
+
+    // 1. look for the file name in lower case (finds "name.png" oder "name", if in cache)
+    if (logoCache.count(search))
+        return logoCache[search];
+
+    // 2. Fallback: look for underscores instead of spaces (e.g. "das_erste.png")
+    std::string sanitized = search;
+    std::replace(sanitized.begin(), sanitized.end(), ' ', '_');
+    if (logoCache.count(sanitized))
+        return logoCache[sanitized];
+
+    // 3. Fallback: try to add extensions if the filename hase none
+    if (search.find('.') == std::string::npos)
+    {
+        std::vector<std::string> exts = {".png", ".svg", ".jpg", ".jpeg"};
+        for (const auto &ext : exts)
+        {
+            if (logoCache.count(search + ext))
+                return logoCache[search + ext];
+            if (logoCache.count(sanitized + ext))
+                return logoCache[sanitized + ext];
+        }
+    }
+
+    return "";
+}
+
+std::string cWebsocketThread::GetLogoPath(const cChannel *channel)
+{
+    if (!channel)
+        return "";
+
+    // 1. look up by channel id
+    std::string id = *channel->GetChannelID().ToString();
+    std::string found = FindLogoInCache(id);
+    if (!found.empty())
+        return found;
+
+    // 2. look for part without channel group
+    std::string name = channel->Name();
+    size_t semi = name.find(';');
+    if (semi != std::string::npos)
+    {
+        name = name.substr(0, semi); // "Das Erste HD;ARD" -> "Das Erste HD"
+    }
+
+    found = FindLogoInCache(name);
+    if (!found.empty())
+        return found;
+
+    // 4. remove comma if in name
+    size_t comma = name.find(',');
+    if (comma != std::string::npos)
+    {
+        name = name.substr(0, comma);
+        found = FindLogoInCache(name);
+    }
+
+    return found; // set to default.png in BuildStatusJson
+}
+
 void cWebsocketThread::on_connect_callback(struct mg_connection *c, int ev, void *ev_data)
 {
     if (ev == MG_EV_HTTP_MSG)
     {
         struct mg_http_message *hm = (struct mg_http_message *)ev_data;
-        if (mg_match(hm->uri, mg_str("/#"), NULL))
+        auto *self = static_cast<cWebsocketThread *>(c->mgr->userdata);
+
+        if (mg_match(hm->uri, mg_str("/logos/#"), NULL))
+        {
+            // get path after "/logos/" (length 7)
+            std::string uriPath(hm->uri.buf + 7, hm->uri.len - 7);
+
+            // URL-Decoding (so we get spaces instead of %20 etc.)
+            char decoded[512];
+            int len = mg_url_decode(uriPath.c_str(), uriPath.size(), decoded, sizeof(decoded), 0);
+
+            if (len > 0)
+            {
+                std::string requestedBaseName(decoded, len);
+                std::string fileName = self->FindLogoInCache(requestedBaseName);
+
+                if (!fileName.empty())
+                {
+                    std::string fullPath = self->getLogoDir() + fileName;
+                    struct mg_http_serve_opts opts = {};
+                    mg_http_serve_file(c, hm, fullPath.c_str(), &opts);
+                    return; // Wichtig: Request hier beenden
+                }
+            }
+            // Fallback to default.png oder 404
+            std::string defaultPath = self->getLogoDir() + "default.png";
+            if (access(defaultPath.c_str(), F_OK) == 0)
+            {
+                struct mg_http_serve_opts opts = {};
+                mg_http_serve_file(c, hm, defaultPath.c_str(), &opts);
+            }
+            else
+            {
+                mg_http_reply(c, 404, "", "Not found\n");
+            }
+        }
+        else if (mg_match(hm->uri, mg_str("/"), NULL))
         {
             mg_ws_upgrade(c, hm, NULL);
         }
@@ -42,16 +213,90 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
         j["type"] = "osdmessage";
         j["message"] = ev.name;
         return j;
+
     case eEventType::ChannelChange:
     {
         j["type"] = "channel";
         j["number"] = ev.number;
+        j["name"] = ev.name;
+
         LOCK_CHANNELS_READ;
         const cChannel *channel = Channels->GetByNumber(ev.number);
-
+        // search by name if the lookup by id was not successful
+        if (!channel && !ev.name.empty())
+        {
+            for (const cChannel *c = Channels->First(); c; c = Channels->Next(c))
+            {
+                // compare the name (VDR names can contain provider infos after a ';')
+                if (c->Name() && strcmp(c->Name(), ev.name.c_str()) == 0)
+                {
+                    channel = c;
+                    break;
+                }
+            }
+        }
         if (channel)
         {
+            dsyslog("websocket-plugin: Lookup logo for '%s'", channel->Name());
             j["name"] = channel->Name();
+
+            // look up if we have a logo
+            std::string logo = GetLogoPath(channel);
+            if (logo.empty())
+            {
+                dsyslog("websocket-plugin: No logo found for '%s'. Cache size: %zu",
+                        channel->Name(), logoCache.size());
+            }
+            std::string logoFile = GetLogoPath(channel);
+
+            if (!logoFile.empty())
+            {
+                j["logo"] = "/logos/" + logoFile;
+            }
+            else
+            {
+                j["logo"] = "/logos/default.png";
+            }
+
+            // some infos about the stream
+            j["tech"] = {
+                {"is_encrypted", channel->Ca() >= 0x0100}, // Encrypted (CAID >= 0x0100)
+                {"has_teletext", channel->Tpid() != 0},    // has Teletext PID
+                {"has_dolby", false},                      // Initial value
+                {"audio_tracks_count", 0}                  // Initial value
+            };
+
+            // check audio tracks
+            int audioCount = 0;
+            bool foundDolby = false;
+
+            // 1. check Audio-PIDs (MPEG)
+            for (int i = 0; i < MAXAPIDS; i++)
+            {
+                if (channel->Apid(i) != 0)
+                {
+                    audioCount++;
+                    // look for Dolby tracks in the ALANG-field (e.g. "deu+dd" oder "dd")
+                    if (channel->Alang(i) && strstr(channel->Alang(i), "dd"))
+                    {
+                        foundDolby = true;
+                    }
+                }
+            }
+
+            // 2. look for dedicated Dolby-PIDs (AC3)
+            for (int i = 0; i < MAXDPIDS; i++)
+            {
+                if (channel->Dpid(i) != 0)
+                {
+                    foundDolby = true;
+                    audioCount++; // this counts as extra audio track
+                }
+            }
+
+            j["tech"]["has_dolby"] = foundDolby;
+            j["tech"]["audio_tracks_count"] = audioCount;
+
             LOCK_SCHEDULES_READ;
             const cSchedule *schedule = Schedules->GetSchedule(channel);
             if (schedule)
@@ -62,19 +307,11 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
                     {
                         int progress = 0;
                         int duration = e->Duration();
-
                         if (key == "present" && duration > 0)
                         {
                             time_t now = time(NULL);
-                            int elapsed = (int)(now - e->StartTime());
-                            progress = (elapsed * 100) / duration;
-
-                            if (progress < 0)
-                                progress = 0;
-                            if (progress > 100)
-                                progress = 100;
+                            progress = std::clamp((int)((now - e->StartTime()) * 100 / duration), 0, 100);
                         }
-
                         j["epg"][key] = {
                             {"title", e->Title() ? e->Title() : ""},
                             {"short_text", (e->ShortText() && *e->ShortText()) ? e->ShortText() : ""},
@@ -83,12 +320,16 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
                             {"progress", progress}};
                     }
                 };
-
                 setEpg("present", schedule->GetPresentEvent());
                 setEpg("following", schedule->GetFollowingEvent());
             }
         }
-        break;
+        else
+        {
+            esyslog("websocket-plugin: ERROR - channel '%s' (# %d) not in channel list!",
+                    ev.name.c_str(), ev.number);
+        }
+        return j;
     }
     case eEventType::ReplayStart:
     {
@@ -115,6 +356,35 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
         j["status"] = "stopped";
         return j;
 
+    case eEventType::TimerChange:
+        j["type"] = "timer";
+        j["timer_name"] = ev.name;
+        j["timer_id"] = ev.number;
+        j["timer_change"] = ev.status;
+        {
+            LOCK_TIMERS_READ;
+            auto Timer = Timers->GetById(ev.number);
+            if (Timer)
+            {
+                auto channel = Timer->Channel();
+                if (channel)
+                {
+                    tChannelID channel_id = channel->GetChannelID();
+                    j["timer_channel_id"] = channel_id.ToString();
+                    j["timer_channel_name"] = channel->Name() ? cString(channel->Name()) : channel_id.ToString();
+                }
+            }
+        }
+        return j;
+
+    case eEventType::Recording:
+        j["type'"] = "recording";
+        j["name"] = ev.name;
+        j["filename"] = ev.fileName;
+        j["recording_active"] = ev.status;
+        j["tuner"] = ev.number;
+        return j;
+
     case eEventType::VolumeChange:
         j["type"] = "volume";
         j["level"] = ev.number;
@@ -122,7 +392,11 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
 
     default:
         j["type"] = "unknown";
-        break;
+        j["name"] = ev.name;
+        j["filename"] = ev.fileName;
+        j["number"] = ev.number;
+        j["status"] = ev.status;
+        return j;
     }
     return j;
 }
@@ -173,8 +447,7 @@ void cWebsocketThread::SendInitialState(struct mg_connection *c)
         {
             j["replaying"] = true;
 
-            // Wir versuchen den Pfad der Aufnahme zu bekommen, damit BuildStatusJson
-            // die .info Datei lesen kann.
+            // try to read the info file of the recording
             const char *fileName = nullptr;
             cReplayControl *replayControl = dynamic_cast<cReplayControl *>(control);
             if (replayControl)
@@ -242,7 +515,11 @@ void cWebsocketThread::Action()
     mgr.userdata = this;
     std::string url = "ws://0.0.0.0:" + std::to_string(port);
     if (!mg_http_listen(&mgr, url.c_str(), on_connect_callback, NULL))
+    {
+        esyslog("websocket-plugin: ERROR during startup");
         return;
+    }
+    UpdateLogoCache();
 
     bool isReplaying = false;
     auto lastPosUpdate = std::chrono::steady_clock::now();
@@ -255,6 +532,7 @@ void cWebsocketThread::Action()
 
         if (optEv)
         {
+            dsyslog("websocket-plugin: got Event type %d from the Queue", (int)optEv->type);
             if (optEv->type == eEventType::PluginStop)
                 break;
             if (optEv->type == eEventType::ReplayStart)
@@ -268,6 +546,7 @@ void cWebsocketThread::Action()
 
         if (isReplaying)
         {
+
             auto now = std::chrono::steady_clock::now();
             if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastPosUpdate).count() >= 1000)
             {
@@ -276,17 +555,22 @@ void cWebsocketThread::Action()
                 bool forward = true;
                 int speed = 0;
                 bool hasData = false;
+                double fps = 25.0;
 
                 {
                     cMutexLock ControlMutexLock;
                     cControl *control = cControl::Control(ControlMutexLock);
                     if (control && control->GetIndex(current, total))
                     {
-                        // Abfrage des Wiedergabemodus
-                        // Play: true = läuft, false = Pause
-                        // Speed: >0 vorwärts, <0 rückwärts, 0 normal
+                        // Replay mode
+                        // Play: true = running, false = pause
+                        // Forward: true if not rewinding
+                        // Speed: 1-3 is fast forwarding, -1 is normal replay
                         control->GetReplayMode(play, forward, speed);
                         hasData = true;
+                        double fps = control->FramesPerSecond();
+                        if (fps <= 0)
+                            fps = 25.0; // Fallback
                     }
                 }
 
@@ -294,8 +578,8 @@ void cWebsocketThread::Action()
                 {
                     json jpos;
                     jpos["type"] = "pos";
-                    jpos["current"] = current / 25; // Vereinfacht 25fps
-                    jpos["total"] = total / 25;
+                    jpos["current"] = current / fps;
+                    jpos["total"] = total / fps;
                     jpos["play"] = play; // true/false
                     jpos["forward"] = forward;
                     jpos["speed"] = speed; // Geschwindigkeit (0, 1, 2...)
@@ -319,10 +603,10 @@ void cWebsocketThread::Action()
                     const cChannel *channel = Channels->GetByNumber(primary->CurrentChannel());
                     if (channel)
                     {
-                        // Wir fingieren ein ChannelChange Event, um BuildStatusJson zu triggern
+                        // send a ChannelChange Event, to trigger BuildStatusJson
                         DeviceEvent ev(eEventType::ChannelChange, channel->Name(), "", channel->Number());
                         BroadcastJson(ev);
-                        isyslog("websocket-plugin: Automatisches EPG-Update gesendet");
+                        dsyslog("websocket-plugin: sent EPG update to clients");
                     }
                 }
                 lastEpgUpdate = now;

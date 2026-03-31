@@ -22,6 +22,8 @@ protected:
     void OsdStatusMessage(const char *Message) override;
     void OsdChannel(const char *Text) override;
 
+    void OsdClear(void);
+
 public:
     explicit cWebsocketStatusMonitor(EventQueue &q);
     virtual ~cWebsocketStatusMonitor();

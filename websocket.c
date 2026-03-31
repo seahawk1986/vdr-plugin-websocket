@@ -11,6 +11,7 @@
 #include <vdr/player.h>
 #include <vdr/plugin.h>
 #include <vdr/status.h>
+#include <vdr/svdrp.h>
 #include <vdr/thread.h>
 #include <algorithm>
 #include <getopt.h>
@@ -33,6 +34,7 @@ private:
   EventQueue eventQueue;
   std::unique_ptr<cWebsocketStatusMonitor> statusMonitor;
   int port{6742};
+  std::string logoDir{"/var/lib/vdr/channellogos/"};
   std::unique_ptr<cWebsocketThread> workerThread;
 public:
   cPluginWebsocket() = default;
@@ -60,7 +62,8 @@ public:
 const char *cPluginWebsocket::CommandLineHelp(void)
 {
   static std::string helpText =
-      std::string("  -p PORT,  --port=PORT    Port für den WebSocket-Server (Standard: ") + std::to_string(port) + ")\n";
+      std::string("  -p PORT,  --port=PORT    Port für den WebSocket-Server (Standard: ") + std::to_string(port) + ")\n" +
+      "  -l DIR,   --logodir=DIR     Pfad zu den Kanallogos (Standard: " + logoDir + ")\n";
 
   return helpText.c_str();
 }
@@ -69,10 +72,11 @@ bool cPluginWebsocket::ProcessArgs(int argc, char *argv[])
 {
   static const struct option long_options[] = {
       {"port", required_argument, nullptr, 'p'},
+      {"logodir", required_argument, nullptr, 'l'},
       {nullptr, 0, nullptr, 0}};
 
   int c;
-  while ((c = getopt_long(argc, argv, "p:", long_options, nullptr)) != -1)
+  while ((c = getopt_long(argc, argv, "p:l:", long_options, nullptr)) != -1)
   {
     switch (c)
     {
@@ -83,6 +87,11 @@ bool cPluginWebsocket::ProcessArgs(int argc, char *argv[])
         fprintf(stderr, "websocket-plugin: Ungültiger Port '%s'\n", optarg);
         return false;
       }
+      break;
+    case 'l':
+      logoDir = optarg;
+      if (logoDir.back() != '/')
+        logoDir += '/'; // make sure the path ends with a slash
       break;
     default:
       return false;
@@ -99,8 +108,8 @@ bool cPluginWebsocket::Initialize(void)
 
 bool cPluginWebsocket::Start(void)
 {
-  isyslog("websocket-plugin: Starte Server auf Port %d", port);
-  workerThread = std::make_unique<cWebsocketThread>(eventQueue, port);
+  dsyslog("websocket-plugin: Starting Server on port %d", port);
+  workerThread = std::make_unique<cWebsocketThread>(eventQueue, port, logoDir);
   workerThread->Start();
   statusMonitor = std::make_unique<cWebsocketStatusMonitor>(eventQueue);
   return true;
@@ -115,7 +124,7 @@ void cPluginWebsocket::Stop(void)
 
     eventQueue.push({eEventType::PluginStop, "SHUTDOWN", 0});
 
-    workerThread.reset(); // Wartet via Destruktor auf das Thread-Ende
+    workerThread.reset(); // Wait for the end of thread using the destructor
   }
 }
 
@@ -162,14 +171,43 @@ bool cPluginWebsocket::Service(const char *Id, void *Data)
 
 const char **cPluginWebsocket::SVDRPHelpPages(void)
 {
-  // Return help text for SVDRP commands this plugin implements
-  return NULL;
+  static const char *HelpPages[] = {
+      "RELOAD",
+      "    Reloads the channel logo cache from the configured directory.",
+      "LIST",
+      "    Shows the number of currently connected WebSocket clients.",
+      NULL // This array has to end with a NULL
+  };
+  return HelpPages;
 }
 
 cString cPluginWebsocket::SVDRPCommand(const char *Command, const char *Option, int &ReplyCode)
 {
-  // Process SVDRP commands this plugin implements
-  return NULL;
-};
+  if (strcasecmp(Command, "RELOAD") == 0)
+  {
+    if (workerThread)
+    {
+      workerThread->ReloadLogos();
+      ReplyCode = 900;
+      return "Logo cache reloaded successfully";
+    }
+    ReplyCode = 554;
+    return "Worker thread not running";
+  }
+
+  else if (strcasecmp(Command, "LIST") == 0)
+  {
+    if (workerThread)
+    {
+      int count = workerThread->GetClientCount(); // Musst du im Thread implementieren
+      ReplyCode = 900;
+      return cString::sprintf("Currently %d clients connected", count);
+    }
+    ReplyCode = 554;
+    return "Worker thread not running";
+  }
+
+  return NULL; // VDR shows the standard help in this case
+}
 
 VDRPLUGINCREATOR(cPluginWebsocket); // Don't touch this!
