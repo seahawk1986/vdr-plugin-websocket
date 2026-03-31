@@ -17,4 +17,6 @@ Description:
 This plugin exposes vdr status information via a websocket connection.
 
 
-Required packages: nlohmann-json3-dev
+Required packages:
+Debian/Ubuntu: nlohmann-json3-dev
+SuSE: nlohmann_json-devel
