@@ -2,6 +2,8 @@
 #include <vdr/plugin.h>
 #include <vdr/menu.h>
 
+#include <algorithm>
+#include <cctype>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <strings.h> // for strcasecmp
@@ -27,7 +29,23 @@ bool isEqualCaseInsensitive(const std::string &a, const std::string &b)
 }
 
 cWebsocketThread::cWebsocketThread(EventQueue &q, int p, std::string ld)
-    : cThread("websocket-worker"), queue(q), port(p), logoDir(std::move(ld)) {}
+    : cThread("websocket-worker"),
+      queue(q),
+      port(p),
+      logoDir(std::move(ld)),
+      lastOsdActivity(std::chrono::steady_clock::now()),
+      lastQueueActivity(std::chrono::steady_clock::now()),
+      lastListSent(std::chrono::steady_clock::now()),
+      osdChanged(false),
+      osdItemsChanged(false),
+      osdHelpChanged(false),
+      focusChanged(false),
+      currentFocusIndex(-1),
+      osdTitle(""),
+      osdItems()
+{
+    dsyslog("websocket-plugin: Thread-Objekt erfolgreich initialisiert");
+}
 
 cWebsocketThread::~cWebsocketThread()
 {
@@ -37,6 +55,14 @@ cWebsocketThread::~cWebsocketThread()
 void cWebsocketThread::StopThread()
 {
     Cancel();
+}
+
+std::string cWebsocketThread::toLower(std::string s)
+{
+    std::string result = s;
+    std::transform(result.begin(), result.end(), result.begin(), [](unsigned char c)
+                   { return std::tolower(c); });
+    return result;
 }
 
 void cWebsocketThread::UpdateLogoCache()
@@ -50,34 +76,36 @@ void cWebsocketThread::UpdateLogoCache()
     struct dirent *ent;
     while ((ent = readdir(dir)) != NULL)
     {
-        // Check both regular files and symbolic links
+        // Ignoriere "." und ".." explizit
+        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0)
+            continue;
+
         if (ent->d_type == DT_REG || ent->d_type == DT_LNK)
         {
-            std::string fileName = ent->d_name;      // original filename
-            std::string lowFile = toLower(fileName); // use lower case for the key
+            std::string fileName = ent->d_name;
+            std::string lowFile = toLower(fileName);
 
             size_t lastDot = lowFile.find_last_of(".");
-            if (lastDot == std::string::npos)
+            if (lastDot == std::string::npos || lastDot == 0)
                 continue;
 
             std::string ext = lowFile.substr(lastDot);
-            // process only those extensions:
             if (ext == ".png" || ext == ".svg" || ext == ".jpg" || ext == ".jpeg")
             {
                 std::string nameOnly = lowFile.substr(0, lastDot);
 
-                // 1. Key: full name in lower case ("das erste.png")
+                // set keys
                 logoCache[lowFile] = fileName;
-
-                // 2. Key: name without extension in lower case ("das erste")
                 logoCache[nameOnly] = fileName;
 
-                // 3. Key: replace spaces with underscores ("das_erste.png" und "das_erste")
                 std::string sanitized = nameOnly;
                 std::replace(sanitized.begin(), sanitized.end(), ' ', '_');
 
-                logoCache[sanitized] = fileName;
-                logoCache[sanitized + ext] = fileName;
+                if (sanitized != nameOnly)
+                {
+                    logoCache[sanitized] = fileName;
+                    logoCache[sanitized + ext] = fileName;
+                }
             }
         }
     }
@@ -157,17 +185,31 @@ void cWebsocketThread::on_connect_callback(struct mg_connection *c, int ev, void
         struct mg_http_message *hm = (struct mg_http_message *)ev_data;
         auto *self = static_cast<cWebsocketThread *>(c->mgr->userdata);
 
+        // check if mgr.userdata is (unlikely) NULL
+        if (!self)
+            return;
+
         if (mg_match(hm->uri, mg_str("/logos/#"), NULL))
         {
-            // get path after "/logos/" (length 7)
+            // 1. Pfad nach "/logos/" extrahieren
+            // Wir prüfen, ob die URI überhaupt lang genug ist
+            if (hm->uri.len <= 7)
+            {
+                mg_http_reply(c, 400, "", "Bad Request\n");
+                return;
+            }
+
             std::string uriPath(hm->uri.buf + 7, hm->uri.len - 7);
 
-            // URL-Decoding (so we get spaces instead of %20 etc.)
+            // 2. URL-Decoding mit festem Puffer
             char decoded[512];
+            // mg_url_decode gibt die Länge zurück. Bei Fehlern (z.B. % am Ende) ist es < 0.
             int len = mg_url_decode(uriPath.c_str(), uriPath.size(), decoded, sizeof(decoded), 0);
 
-            if (len > 0)
+            // check decoded length
+            if (len > 0 && len < (int)sizeof(decoded))
             {
+                // limit length of non-null terminated data
                 std::string requestedBaseName(decoded, len);
                 std::string fileName = self->FindLogoInCache(requestedBaseName);
 
@@ -176,7 +218,7 @@ void cWebsocketThread::on_connect_callback(struct mg_connection *c, int ev, void
                     std::string fullPath = self->getLogoDir() + fileName;
                     struct mg_http_serve_opts opts = {};
                     mg_http_serve_file(c, hm, fullPath.c_str(), &opts);
-                    return; // Wichtig: Request hier beenden
+                    return;
                 }
             }
             // Fallback to default.png oder 404
@@ -209,19 +251,6 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
     json j;
     switch (ev.type)
     {
-    case eEventType::OsdClear:
-        dsyslog("websocket-plugin: Clear OSD");
-        ;
-        j["type"] = "osdmessage";
-        j["message"] = "";
-        j["priority"] = 0;
-        return j;
-
-    case eEventType::OsdMessage:
-        j["type"] = "osdmessage";
-        j["message"] = ev.name;
-        j["priority"] = ev.number;
-        return j;
 
     case eEventType::ChannelChange:
     {
@@ -272,8 +301,15 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
                 {"is_encrypted", channel->Ca() >= 0x0100}, // Encrypted (CAID >= 0x0100)
                 {"has_teletext", channel->Tpid() != 0},    // has Teletext PID
                 {"has_dolby", false},                      // Initial value
-                {"audio_tracks_count", 0}                  // Initial value
+                {"audio_tracks_count", 0},                 // Initial value
+                {"can_decrypt", true}                      // Initial value
             };
+
+            cDevice *primary = cDevice::PrimaryDevice();
+            if (channel->Ca() >= 0x0100 && primary)
+            {
+                j["tech"]["can_decrypt"] = primary->ProvidesChannel(channel, 0);
+            }
 
             // check audio tracks
             int audioCount = 0;
@@ -352,10 +388,13 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
             if (recording)
             {
                 const cRecordingInfo *info = recording->Info();
-                j["recording"] = {
-                    {"title", recording->Name()},
-                    {"description", (info->Description() && *info->Description()) ? info->Description() : ""},
-                    {"duration", recording->LengthInSeconds()}};
+                if (info)
+                    j["recording"] = {
+                        {"title", info->Title() ? info->Title() : recording->Title() ? recording->Title()
+                                                                                     : recording->Name()},
+                        {"subtitle", info->ShortText() ? info->ShortText() : nullptr},
+                        {"description", (info->Description() && *info->Description()) ? info->Description() : ""},
+                        {"duration", recording->LengthInSeconds()}};
             }
         }
         break;
@@ -388,13 +427,15 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
         return j;
 
     case eEventType::Recording:
+    {
         BroadcastTimerStatus();
-        j["type'"] = "recording";
+        j["type"] = "recording";
         j["name"] = ev.name;
         j["filename"] = ev.fileName;
         j["recording_active"] = ev.status;
         j["tuner"] = ev.number;
         return j;
+    }
 
     case eEventType::VolumeChange:
     {
@@ -407,6 +448,104 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
             return j;
         }
         break;
+    }
+
+    case eEventType::OsdClear:
+    {
+        clearPending = true;
+        osdItemsChanged = false; // WICHTIG: Liste-Update für diese Runde stoppen
+        lastOsdActivity = std::chrono::steady_clock::now();
+        return nlohmann::json();
+    }
+
+    case eEventType::OsdMessage:
+        j["type"] = "osdmessage";
+        j["message"] = ev.name;
+        j["priority"] = ev.number;
+        return j;
+
+    case eEventType::OsdTitle:
+    {
+        if (ev.name.empty())
+        {
+            clearPending = true;
+            osdItems.clear();
+            osdTitle = "";
+            return nlohmann::json();
+        }
+
+        // Wenn ein NEUER Titel kommt (Ebene tiefer oder neues Menü)
+        if (osdTitle != ev.name)
+        {
+            osdTitle = ev.name;
+            osdItems.clear();
+            currentFocusIndex = -1;
+            osdItemsChanged = true;
+            clearPending = false; // Hier ist das OSD definitiv wieder "frisch" offen
+        }
+        else
+        {
+            // GLEICHER Titel (z.B. Back-Taste zurück ins Hauptmenü):
+            // Wir triggern das Update der Liste NUR, wenn wir nicht
+            // gerade ein OsdClear (clearPending) erhalten haben.
+            if (!clearPending)
+            {
+                osdItemsChanged = true;
+            }
+        }
+        lastOsdActivity = std::chrono::steady_clock::now();
+        return nlohmann::json();
+    }
+
+    case eEventType::OsdItem:
+    {
+        clearPending = false; // Lebenszeichen! OSD ist offen.
+        int idx = ev.number;
+        if (idx < 0)
+            return nlohmann::json();
+
+        if (idx >= (int)osdItems.size())
+        {
+            osdItems.resize(idx + 1, "");
+        }
+
+        if (osdItems[idx] != ev.name)
+        {
+            osdItems[idx] = ev.name;
+            osdItemsChanged = true;
+        }
+        lastOsdActivity = std::chrono::steady_clock::now();
+        return nlohmann::json();
+    }
+
+    case eEventType::OsdCurrentItem:
+    {
+        currentFocusIndex = ev.number;
+        lastOsdActivity = std::chrono::steady_clock::now();
+        focusChanged = true; // Nur Flag setzen, kein Broadcast!
+        return nlohmann::json();
+    }
+
+    case eEventType::OsdHelpKeys:
+    {
+        clearPending = false; // Lebenszeichen!
+        std::stringstream ss(ev.name);
+        std::string segment;
+        int i = 0;
+
+        // Erstmal alle 4 nullen, falls der neue String kürzer ist
+        for (int j = 0; j < 4; ++j)
+            osdHelp[j] = "";
+
+        while (std::getline(ss, segment, '|') && i < 4)
+        {
+            osdHelp[i] = segment;
+            i++;
+        }
+
+        osdHelpChanged = true;
+        lastOsdActivity = std::chrono::steady_clock::now();
+        return nlohmann::json();
     }
 
     default:
@@ -580,6 +719,30 @@ void cWebsocketThread::BroadcastJson(const DeviceEvent &ev)
     }
 }
 
+void cWebsocketThread::processEvent(const DeviceEvent &ev)
+{
+    // 1. Fokus-Events direkt abhandeln (Performance)
+    if (ev.type == eEventType::OsdCurrentItem)
+    {
+        currentFocusIndex = ev.number;
+        focusChanged = true;
+        lastOsdActivity = std::chrono::steady_clock::now();
+    }
+    // 2. Alle anderen Events durch BuildStatusJson schicken
+    else
+    {
+        json j = BuildStatusJson(ev);
+
+        // WICHTIG: BuildStatusJson setzt intern osdItemsChanged, osdHelpChanged etc.
+        // Wir senden hier NUR, wenn es KEIN OSD-Event war (z.B. ChannelChange, Volume).
+        // OSD-Events geben ein leeres JSON zurück und werden später gesammelt gesendet.
+        if (!j.empty())
+        {
+            BroadcastJson(j);
+        }
+    }
+}
+
 void cWebsocketThread::Action()
 {
     mg_mgr_init(&mgr);
@@ -598,26 +761,89 @@ void cWebsocketThread::Action()
 
     while (Running())
     {
-        mg_mgr_poll(&mgr, 10);
-        auto optEv = queue.pop_with_timeout(40);
+        mg_mgr_poll(&mgr, 0);
 
+        // 1. Hole das erste Event (blockierend max 20ms)
+        auto optEv = queue.pop_with_timeout(20);
         if (optEv)
         {
-            if (optEv->type == eEventType::PluginStop)
-                break;
+            // TRICK: Wenn es ein Fokus-Event ist, warten wir winzige 15ms.
+            // In dieser Zeit füllt der VDR die Queue mit weiteren Fokus-Events vom Scrollen.
+            if (optEv->type == eEventType::OsdCurrentItem)
+            {
+                cCondWait::SleepMs(15);
+            }
 
-            if (optEv->type == eEventType::ReplayStart)
-                isReplaying = true;
-            else if (optEv->type == eEventType::ReplayStop || optEv->type == eEventType::ChannelChange)
-                isReplaying = false;
+            lastQueueActivity = std::chrono::steady_clock::now();
+            processEvent(*optEv);
 
-            BroadcastJson(*optEv);
+            // 2. Jetzt saugen wir ALLES leer, was sich in den 15ms angesammelt hat.
+            // Wenn 10 Fokus-Events drin liegen, werden sie hier in Mikrosekunden
+            // verarbeitet (nur die Variable gesetzt), OHNE zu senden!
+            while (auto nextEv = queue.pop_with_timeout(0))
+            {
+                processEvent(*nextEv);
+            }
         }
 
+        // 2. Zeitberechnung (Immer ausführen!)
         auto now = std::chrono::steady_clock::now();
+        auto elapsedQueue = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastQueueActivity).count();
+        auto elapsedOsd = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastOsdActivity).count();
+        auto elapsedLastList = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastListSent).count();
 
+        // 3. BROADCAST ENTSCHEIDUNG (in websocketthread.cpp)
+        if (queue.empty())
+        {
+            // A: FOKUS (Balken) - Unverändert
+            if (focusChanged && !osdItemsChanged && elapsedOsd >= 40 && elapsedLastList > 150)
+            {
+                focusChanged = false;
+                BroadcastJson(nlohmann::json({{"type", "osd"}, {"sub", "focus"}, {"index", currentFocusIndex}}));
+            }
+            // B: LISTE ODER TEXT-OSD
+            else if (osdItemsChanged || osdHelpChanged)
+            {
+                // DIE LÖSUNG: Wir senden eine Liste NUR, wenn KEIN Clear ansteht (!clearPending).
+                // Das verhindert, dass das Hauptmenü beim Schließen "wiederbelebt" wird.
+                if (!osdItems.empty() && !osdTitle.empty() && !clearPending)
+                {
+                    int requiredIdle = (osdItems.size() > 50) ? 600 : 100;
+                    if (elapsedQueue >= requiredIdle)
+                    {
+                        osdItemsChanged = false;
+                        osdHelpChanged = false;
+                        focusChanged = false;
+                        lastListSent = now;
+
+                        nlohmann::json j = {
+                            {"type", "osd"}, {"sub", "list"}, {"items", osdItems}, {"title", osdTitle}, {"focus", currentFocusIndex}, {"red", osdHelp[0]}, {"green", osdHelp[1]}, {"yellow", osdHelp[2]}, {"blue", osdHelp[3]}};
+                        BroadcastJson(j);
+                    }
+                }
+                else if (clearPending)
+                {
+                    // Wenn ein Clear ansteht, verwerfen wir Inhalts-Updates für diese Runde.
+                    // So kann Block C nach 250ms "Stille" feuern.
+                    osdItemsChanged = false;
+                    osdHelpChanged = false;
+                }
+            }
+            // C: CLEAR (Schließen) - Hat jetzt Vorrang vor Block B
+            else if (clearPending && elapsedOsd >= 250)
+            {
+                clearPending = false;
+                osdItems.clear();
+                osdTitle = "";
+                BroadcastJson(nlohmann::json({{"type", "osd"}, {"sub", "clear"}}));
+                isyslog("websocket-plugin: OSD CLOSED AT CLIENT");
+            }
+        }
+
+        // 4. REPLAY / POS / EPG Watchdog
         if (isReplaying)
         {
+
             if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastPosUpdate).count() >= 1000)
             {
                 int current = 0, total = 0;
@@ -658,28 +884,51 @@ void cWebsocketThread::Action()
         }
         else
         {
-            if (std::chrono::duration_cast<std::chrono::seconds>(now - lastEpgUpdate).count() >= 60)
-            {
-                std::string cName;
-                int cNum = 0;
-                {
-                    LOCK_CHANNELS_READ;
-                    const cChannel *channel = Channels->GetByNumber(cDevice::PrimaryDevice()->CurrentChannel());
-                    if (channel)
-                    {
-                        cName = channel->Name();
-                        cNum = channel->Number();
-                    }
-                }
+            bool isOsdActive = !osdItems.empty() || !osdTitle.empty();
 
-                if (cNum > 0)
+            if (!isOsdActive && std::chrono::duration_cast<std::chrono::seconds>(now - lastEpgUpdate).count() >= 60)
+            {
                 {
-                    DeviceEvent ev(eEventType::ChannelChange, cName, "", cNum);
-                    BroadcastJson(ev);
+                    std::string cName;
+                    int cNum = 0;
+                    {
+                        LOCK_CHANNELS_READ;
+                        const cChannel *channel = Channels->GetByNumber(cDevice::PrimaryDevice()->CurrentChannel());
+                        if (channel)
+                        {
+                            cName = channel->Name();
+                            cNum = channel->Number();
+                        }
+                    }
+
+                    if (cNum > 0)
+                    {
+                        DeviceEvent ev(eEventType::ChannelChange, cName, "", cNum);
+                        BroadcastJson(ev);
+                    }
+                    lastEpgUpdate = now;
                 }
-                lastEpgUpdate = now;
             }
+        }
+        if (!optEv)
+        {
+            cCondWait::SleepMs(5);
         }
     }
     mg_mgr_free(&mgr);
+}
+
+void cWebsocketThread::BroadcastJson(const nlohmann::json &j)
+{
+    if (j.is_null() || (j.is_object() && j.empty()))
+        return;
+
+    std::string s = j.dump();
+    for (struct mg_connection *c = mgr.conns; c != NULL; c = c->next)
+    {
+        if (c->is_websocket)
+        {
+            mg_ws_send(c, s.c_str(), s.size(), WEBSOCKET_OP_TEXT);
+        }
+    }
 }

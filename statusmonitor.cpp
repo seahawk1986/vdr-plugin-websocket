@@ -74,13 +74,41 @@ void cWebsocketStatusMonitor::OsdStatusMessage(eMessageType Type, const char *Me
 {
     if (Message)
         queue.push(DeviceEvent(eEventType::OsdMessage, Message, "", Type));
-    else
-        queue.push(DeviceEvent(eEventType::OsdMessage, "", "", Type));
 }
 
 void cWebsocketStatusMonitor::OsdChannel(const char *Text)
 {
     queue.push(DeviceEvent(eEventType::OsdChannel, Text ? Text : ""));
+}
+
+// Called if the menu is opened or updated
+void cWebsocketStatusMonitor::OsdTitle(const char *Title)
+{
+    queue.push(DeviceEvent(eEventType::OsdTitle, Title ? Title : ""));
+}
+
+// for each menu item
+void cWebsocketStatusMonitor::OsdItem(const char *Text, int Index)
+{
+    queue.push(DeviceEvent(eEventType::OsdItem, Text ? Text : "", "", Index));
+}
+
+// the item with the focus
+void cWebsocketStatusMonitor::OsdCurrentItem(const char *Text, int Index)
+{
+    queue.push(DeviceEvent(eEventType::OsdCurrentItem, Text ? Text : "", "", Index));
+}
+
+void cWebsocketStatusMonitor::OsdHelpKeys(const char *Red, const char *Green, const char *Yellow, const char *Blue)
+{
+    // Wir bauen einen String: "Rot|Grün|Gelb|Blau"
+    std::string keys = std::string(Red ? Red : "") + "|" +
+                       (Green ? Green : "") + "|" +
+                       (Yellow ? Yellow : "") + "|" +
+                       (Blue ? Blue : "");
+
+    isyslog("websocket-plugin: OSD HelpKeys: %s", keys.c_str());
+    queue.push(DeviceEvent(eEventType::OsdHelpKeys, keys));
 }
 
 void cWebsocketStatusMonitor::OsdClear()

@@ -21,8 +21,13 @@ protected:
     void SetSubtitleTrack(int Index, const char *const *Tracks) override;
     void OsdStatusMessage(eMessageType Type, const char *Message) override;
     void OsdChannel(const char *Text) override;
+    // OSD display methods
+    void OsdTitle(const char *Title) override;
+    void OsdItem(const char *Text, int Index) override;
+    void OsdCurrentItem(const char *Text, int Index) override;
+    void OsdHelpKeys(const char *Red, const char *Green, const char *Yellow, const char *Blue) override;
 
-    void OsdClear(void);
+    void OsdClear(void) override;
 
 public:
     explicit cWebsocketStatusMonitor(EventQueue &q);

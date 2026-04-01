@@ -20,6 +20,10 @@ enum class eEventType
     SubtitleChange,
     OsdMessage,
     OsdChannel,
+    OsdTitle,
+    OsdItem,
+    OsdCurrentItem,
+    OsdHelpKeys,
     OsdClear,
 };
 
@@ -43,6 +47,11 @@ private:
     std::condition_variable cv;
 
 public:
+    bool empty()
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        return queue.empty();
+    }
     void push(DeviceEvent ev)
     {
         {
@@ -61,17 +70,37 @@ public:
         queue.pop();
         return ev;
     }
+    std::optional<DeviceEvent> try_pop()
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (queue.empty())
+            return std::nullopt;
+        DeviceEvent ev = std::move(queue.front());
+        queue.pop();
+        return ev;
+    }
+
     std::optional<DeviceEvent> pop_with_timeout(int milliseconds)
     {
         std::unique_lock<std::mutex> lock(mutex);
-        // wait for an event or timeout
-        if (cv.wait_for(lock, std::chrono::milliseconds(milliseconds), [this]
-                        { return !queue.empty(); }))
+        // Wenn milliseconds 0 ist, prüfen wir nur, ob etwas da ist, ohne zu warten
+        if (milliseconds == 0)
         {
-            DeviceEvent ev = std::move(queue.front());
-            queue.pop();
-            return ev;
+            if (queue.empty())
+                return std::nullopt;
         }
-        return std::nullopt; // return no event on timeout
+        else
+        {
+            // Nur warten, wenn milliseconds > 0
+            if (!cv.wait_for(lock, std::chrono::milliseconds(milliseconds), [this]
+                             { return !queue.empty(); }))
+            {
+                return std::nullopt;
+            }
+        }
+
+        DeviceEvent ev = std::move(queue.front());
+        queue.pop();
+        return ev;
     }
 };
