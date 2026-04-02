@@ -22,6 +22,7 @@ enum class eEventType
     OsdChannel,
     OsdTitle,
     OsdItem,
+    OsdTextItem,
     OsdCurrentItem,
     OsdHelpKeys,
     OsdClear,

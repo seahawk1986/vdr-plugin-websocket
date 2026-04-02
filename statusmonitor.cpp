@@ -99,9 +99,20 @@ void cWebsocketStatusMonitor::OsdCurrentItem(const char *Text, int Index)
     queue.push(DeviceEvent(eEventType::OsdCurrentItem, Text ? Text : "", "", Index));
 }
 
+// multiline text
+void cWebsocketStatusMonitor::OsdTextItem(const char *Text, bool Scroll)
+{
+    // we don't care about scroll events, so let's dump all of those events
+    if (!Text)
+    {
+        return;
+    }
+    queue.push(DeviceEvent(eEventType::OsdTextItem, Text));
+}
+
 void cWebsocketStatusMonitor::OsdHelpKeys(const char *Red, const char *Green, const char *Yellow, const char *Blue)
 {
-    // Wir bauen einen String: "Rot|Grün|Gelb|Blau"
+    // build up a string: "red|green|yellow|blue"
     std::string keys = std::string(Red ? Red : "") + "|" +
                        (Green ? Green : "") + "|" +
                        (Yellow ? Yellow : "") + "|" +

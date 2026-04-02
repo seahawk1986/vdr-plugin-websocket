@@ -517,6 +517,27 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
         lastOsdActivity = std::chrono::steady_clock::now();
         return nlohmann::json();
     }
+    case eEventType::OsdTextItem:
+    {
+        // let's try to handle this like a regular osd item
+        clearPending = false; // Lebenszeichen! OSD ist offen.
+        int idx = ev.number;
+        if (idx < 0)
+            return nlohmann::json();
+
+        if (idx >= (int)osdItems.size())
+        {
+            osdItems.resize(idx + 1, "");
+        }
+
+        if (osdItems[idx] != ev.name)
+        {
+            osdItems[idx] = ev.name;
+            osdItemsChanged = true;
+        }
+        lastOsdActivity = std::chrono::steady_clock::now();
+        return nlohmann::json();
+    }
 
     case eEventType::OsdCurrentItem:
     {
@@ -792,10 +813,10 @@ void cWebsocketThread::Action()
         auto elapsedOsd = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastOsdActivity).count();
         auto elapsedLastList = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastListSent).count();
 
-        // 3. BROADCAST ENTSCHEIDUNG (in websocketthread.cpp)
+        // 3. BROADCAST ENTSCHEIDUNG
         if (queue.empty())
         {
-            // A: FOKUS (Balken) - Unverändert
+            // A: FOKUS (Balken)
             if (focusChanged && !osdItemsChanged && elapsedOsd >= 40 && elapsedLastList > 150)
             {
                 focusChanged = false;
@@ -804,8 +825,6 @@ void cWebsocketThread::Action()
             // B: LISTE ODER TEXT-OSD
             else if (osdItemsChanged || osdHelpChanged)
             {
-                // DIE LÖSUNG: Wir senden eine Liste NUR, wenn KEIN Clear ansteht (!clearPending).
-                // Das verhindert, dass das Hauptmenü beim Schließen "wiederbelebt" wird.
                 if (!osdItems.empty() && !osdTitle.empty() && !clearPending)
                 {
                     int requiredIdle = (osdItems.size() > 50) ? 600 : 100;

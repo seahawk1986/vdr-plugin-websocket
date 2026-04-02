@@ -24,6 +24,7 @@ protected:
     // OSD display methods
     void OsdTitle(const char *Title) override;
     void OsdItem(const char *Text, int Index) override;
+    void OsdTextItem(const char *Text, bool Scroll) override;
     void OsdCurrentItem(const char *Text, int Index) override;
     void OsdHelpKeys(const char *Red, const char *Green, const char *Yellow, const char *Blue) override;
 
