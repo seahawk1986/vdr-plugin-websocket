@@ -836,7 +836,15 @@ void cWebsocketThread::Action()
                         lastListSent = now;
 
                         nlohmann::json j = {
-                            {"type", "osd"}, {"sub", "list"}, {"items", osdItems}, {"title", osdTitle}, {"focus", currentFocusIndex}, {"red", osdHelp[0]}, {"green", osdHelp[1]}, {"yellow", osdHelp[2]}, {"blue", osdHelp[3]}};
+                            {"type", "osd"},
+                            {"sub", "list"},
+                            {"items", osdItems},
+                            {"title", osdTitle},
+                            {"focus", currentFocusIndex},
+                            {"red", osdHelp[0]},
+                            {"green", osdHelp[1]},
+                            {"yellow", osdHelp[2]},
+                            {"blue", osdHelp[3]}};
                         BroadcastJson(j);
                     }
                 }
