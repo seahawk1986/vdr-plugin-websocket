@@ -74,6 +74,8 @@ void cWebsocketStatusMonitor::OsdStatusMessage(eMessageType Type, const char *Me
 {
     if (Message)
         queue.push(DeviceEvent(eEventType::OsdMessage, Message, "", Type));
+    else
+        queue.push(DeviceEvent(eEventType::OsdMessage, "", "", -1));
 }
 
 void cWebsocketStatusMonitor::OsdChannel(const char *Text)

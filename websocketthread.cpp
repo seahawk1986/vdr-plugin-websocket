@@ -40,6 +40,7 @@ cWebsocketThread::cWebsocketThread(EventQueue &q, int p, std::string ld)
       osdItemsChanged(false),
       osdHelpChanged(false),
       focusChanged(false),
+      osdMessageOpen(false),
       currentFocusIndex(-1),
       osdTitle(""),
       osdItems()
@@ -455,6 +456,11 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
         clearPending = true;
         osdItemsChanged = false; // WICHTIG: Liste-Update für diese Runde stoppen
         lastOsdActivity = std::chrono::steady_clock::now();
+        if (osdMessageOpen)
+        {
+            DeviceEvent ev(DeviceEvent(eEventType::OsdMessage, "", "", -1));
+            osdMessageOpen = false;
+        }
         return nlohmann::json();
     }
 
@@ -462,6 +468,7 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
         j["type"] = "osdmessage";
         j["message"] = ev.name;
         j["priority"] = ev.number;
+        osdMessageOpen = true; // remember that the OSD message is open
         return j;
 
     case eEventType::OsdTitle:

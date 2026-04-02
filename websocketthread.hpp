@@ -39,6 +39,7 @@ private:
     std::atomic<bool> osdItemsChanged{false};
     std::atomic<bool> osdHelpChanged{false};
     std::atomic<bool> focusChanged{false};
+    std::atomic<bool> osdMessageOpen{false};
     int currentFocusIndex{-1};
 
     // osd cache (data)
