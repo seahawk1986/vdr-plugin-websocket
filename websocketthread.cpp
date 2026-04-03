@@ -38,25 +38,6 @@ cWebsocketThread::cWebsocketThread(EventQueue &q, cWebsocketStatusMonitor *sm, i
 {
     dsyslog("websocket-plugin: Thread initialisiert");
 }
-// cWebsocketThread::cWebsocketThread(EventQueue &q, int p, std::string ld)
-//     : cThread("websocket-worker"),
-//       queue(q),
-//       port(p),
-//       logoDir(std::move(ld))
-// //   lastOsdActivity(std::chrono::steady_clock::now()),
-// //   lastQueueActivity(std::chrono::steady_clock::now()),
-// //   lastListSent(std::chrono::steady_clock::now()),
-// //   osdChanged(false),
-// //   osdItemsChanged(false),
-// //   osdHelpChanged(false),
-// //   focusChanged(false),
-// //   osdMessageOpen(false),
-// //   currentFocusIndex(-1),
-// //   osdTitle(""),
-// //   osdItems()
-// {
-//     dsyslog("websocket-plugin: Thread-Objekt erfolgreich initialisiert");
-// }
 
 cWebsocketThread::~cWebsocketThread()
 {
