@@ -1,3 +1,4 @@
+#include <magic_enum/magic_enum.hpp>
 #include "statusmonitor.hpp"
 #include <vdr/plugin.h>
 
@@ -20,7 +21,7 @@ void cWebsocketStatusMonitor::ChannelSwitch(const cDevice *Device, int ChannelNu
         const cChannel *channel = Channels->GetByNumber(ChannelNumber);
         if (channel)
         {
-            dsyslog("websocket-plugin: switch to channel '%s'", channel->Name());
+            dsyslog("websocket-plugin: switch to channel %d '%s'", channel->Number(), channel->Name());
             queue.push(DeviceEvent(eEventType::ChannelChange, channel->Name(), "", channel->Number()));
         }
     }
@@ -42,6 +43,8 @@ void cWebsocketStatusMonitor::Replaying(const cControl *Control, const char *Nam
 
 void cWebsocketStatusMonitor::TimerChange(const cTimer *Timer, eTimerChange Change)
 {
+    const auto isLocal = Timer->Local() ? "local" : "remote";
+    dsyslog("websocket-plugin: Timer change: id: %d, '%s': '%s' (%s)", Timer->Id(), Timer->File(), std::string(magic_enum::enum_name(Change)).c_str(), isLocal);
     queue.push(DeviceEvent(eEventType::TimerChange, Timer->File(), "", Timer->Id(), (Change == tcAdd) ? true : false));
 }
 
@@ -52,80 +55,111 @@ void cWebsocketStatusMonitor::Recording(const cDevice *Device, const char *Name,
 
 void cWebsocketStatusMonitor::SetVolume(int Volume, bool Absolute)
 {
-    queue.push(DeviceEvent(eEventType::VolumeChange, "", "", Volume));
+    dsyslog("websocket-plugin: volume changed: %d, absolute: %s", Volume, Absolute ? "true" : "false");
+    queue.push(DeviceEvent(eEventType::VolumeChange, "", "", Volume, Absolute));
 }
 
 void cWebsocketStatusMonitor::SetAudioTrack(int Index, const char *const *Tracks)
 {
-    queue.push(DeviceEvent(eEventType::AudioTrackChange, Tracks && Tracks[Index] ? Tracks[Index] : "", "", Index));
+    const auto track = Tracks && Tracks[Index] ? Tracks[Index] : "";
+    dsyslog("websocket-plugin: SetAudioTrack to %d: %s", Index, track);
+    queue.push(DeviceEvent(eEventType::AudioTrackChange, track, "", Index));
 }
 
 void cWebsocketStatusMonitor::SetAudioChannel(int AudioChannel)
 {
+    dsyslog("websocket-plugin: SetAudioChannel to %d", AudioChannel);
     queue.push(DeviceEvent(eEventType::AudioChannelChange, "", "", AudioChannel));
 }
 
 void cWebsocketStatusMonitor::SetSubtitleTrack(int Index, const char *const *Tracks)
 {
-    queue.push(DeviceEvent(eEventType::SubtitleChange, Tracks && Tracks[Index] ? Tracks[Index] : "", "", Index));
+    const auto track = Tracks && Tracks[Index] ? Tracks[Index] : "";
+    dsyslog("websocket-plugin: SetSubtitleTrack to %d: %s", Index, track);
+    queue.push(DeviceEvent(eEventType::SubtitleChange, track, "", Index));
+}
+
+void cWebsocketStatusMonitor::OsdStatusMessage(const char *Message)
+{
+    dsyslog("websocket-plugin: got OSDStatusMessage without Type: '%s'", Message);
+    OsdStatusMessage(mtStatus, Message);
 }
 
 void cWebsocketStatusMonitor::OsdStatusMessage(eMessageType Type, const char *Message)
 {
+    std::lock_guard<std::mutex> lock(osdMutex);
+    dsyslog("websocket-plugin: OSD Message [%s]: %s",
+            std::string(magic_enum::enum_name(Type)).c_str(),
+            Message ? Message : "CLEAR");
     if (Message)
+    {
+        osdState.SetStatusMessage(Message);
         queue.push(DeviceEvent(eEventType::OsdMessage, Message, "", Type));
+    }
     else
+    {
+        osdState.ClearStatusMessage();
         queue.push(DeviceEvent(eEventType::OsdMessage, "", "", -1));
+    }
 }
 
 void cWebsocketStatusMonitor::OsdChannel(const char *Text)
 {
+    std::lock_guard<std::mutex> lock(osdMutex);
+    dsyslog("websocket-plugin: OsdChannel: '%s", Text);
     queue.push(DeviceEvent(eEventType::OsdChannel, Text ? Text : ""));
 }
 
-// Called if the menu is opened or updated
 void cWebsocketStatusMonitor::OsdTitle(const char *Title)
 {
-    queue.push(DeviceEvent(eEventType::OsdTitle, Title ? Title : ""));
+    std::lock_guard<std::mutex> lock(osdMutex);
+    dsyslog("websocket-plugin: OsdTitle: '%s", Title);
+    osdState.SetTitle(Title);
+    timeoutTimer.Set(100);
+    timerActive = true;
 }
 
-// for each menu item
-void cWebsocketStatusMonitor::OsdItem(const char *Text, int Index)
+void cWebsocketStatusMonitor::OsdItem(const char *Text, int Index, bool Selectable)
 {
-    queue.push(DeviceEvent(eEventType::OsdItem, Text ? Text : "", "", Index));
+    std::lock_guard<std::mutex> lock(osdMutex);
+    const auto selectable = Selectable ? "true" : "false";
+    dsyslog("websocket-plugin: OsdItem: '%s' [%d] (selectable: %s)", Text, Index, selectable);
+    osdState.UpdateItem(Text, Index, Selectable);
+    timerActive = false;
 }
 
-// the item with the focus
 void cWebsocketStatusMonitor::OsdCurrentItem(const char *Text, int Index)
 {
-    queue.push(DeviceEvent(eEventType::OsdCurrentItem, Text ? Text : "", "", Index));
+    std::lock_guard<std::mutex> lock(osdMutex);
+    timerActive = false;
+    dsyslog("websocket-plugin: OsdCurrentItem: '%s' [%d]", Text, Index);
+    osdState.SetCurrentItem(Text, Index);
+
+    CheckAndSend();
 }
 
-// multiline text
 void cWebsocketStatusMonitor::OsdTextItem(const char *Text, bool Scroll)
 {
-    // we don't care about scroll events, so let's dump all of those events
-    if (!Text)
-    {
-        return;
-    }
-    queue.push(DeviceEvent(eEventType::OsdTextItem, Text));
+    std::lock_guard<std::mutex> lock(osdMutex);
+    timerActive = false;
+    dsyslog("websocket-plugin: OsdTextItem: '%s' (Scroll: %s)", Text, Scroll ? "true" : "false");
+    osdState.SetTextItem(Text, Scroll);
+    CheckAndSend();
 }
 
 void cWebsocketStatusMonitor::OsdHelpKeys(const char *Red, const char *Green, const char *Yellow, const char *Blue)
 {
-    // build up a string: "red|green|yellow|blue"
-    std::string keys = std::string(Red ? Red : "") + "|" +
-                       (Green ? Green : "") + "|" +
-                       (Yellow ? Yellow : "") + "|" +
-                       (Blue ? Blue : "");
-
-    isyslog("websocket-plugin: OSD HelpKeys: %s", keys.c_str());
-    queue.push(DeviceEvent(eEventType::OsdHelpKeys, keys));
+    std::lock_guard<std::mutex> lock(osdMutex);
+    dsyslog("websocket-plugin: OsdHelpKeys Red: '%s', Green: '%s', Yellow: '%s', Blue: '%s'", Red, Green, Yellow, Blue);
+    osdState.SetHelpKeys(Red, Green, Yellow, Blue);
+    if (!timerActive)
+        CheckAndSend();
 }
 
 void cWebsocketStatusMonitor::OsdClear()
 {
-    dsyslog("osd cleared");
+    std::lock_guard<std::mutex> lock(osdMutex);
+    dsyslog("websocket-plugin: OsdClear");
+    osdState.Clear();
     queue.push(DeviceEvent(eEventType::OsdClear));
 }

@@ -1,4 +1,5 @@
 #include "websocketthread.hpp"
+#include "statusmonitor.hpp"
 #include <vdr/plugin.h>
 #include <vdr/menu.h>
 
@@ -28,25 +29,34 @@ bool isEqualCaseInsensitive(const std::string &a, const std::string &b)
     return strcasecmp(a.c_str(), b.c_str()) == 0;
 }
 
-cWebsocketThread::cWebsocketThread(EventQueue &q, int p, std::string ld)
+cWebsocketThread::cWebsocketThread(EventQueue &q, cWebsocketStatusMonitor *sm, int p, std::string ld)
     : cThread("websocket-worker"),
       queue(q),
+      statusMonitor(sm), // Zuweisung im Konstruktor
       port(p),
-      logoDir(std::move(ld)),
-      lastOsdActivity(std::chrono::steady_clock::now()),
-      lastQueueActivity(std::chrono::steady_clock::now()),
-      lastListSent(std::chrono::steady_clock::now()),
-      osdChanged(false),
-      osdItemsChanged(false),
-      osdHelpChanged(false),
-      focusChanged(false),
-      osdMessageOpen(false),
-      currentFocusIndex(-1),
-      osdTitle(""),
-      osdItems()
+      logoDir(std::move(ld))
 {
-    dsyslog("websocket-plugin: Thread-Objekt erfolgreich initialisiert");
+    dsyslog("websocket-plugin: Thread initialisiert");
 }
+// cWebsocketThread::cWebsocketThread(EventQueue &q, int p, std::string ld)
+//     : cThread("websocket-worker"),
+//       queue(q),
+//       port(p),
+//       logoDir(std::move(ld))
+// //   lastOsdActivity(std::chrono::steady_clock::now()),
+// //   lastQueueActivity(std::chrono::steady_clock::now()),
+// //   lastListSent(std::chrono::steady_clock::now()),
+// //   osdChanged(false),
+// //   osdItemsChanged(false),
+// //   osdHelpChanged(false),
+// //   focusChanged(false),
+// //   osdMessageOpen(false),
+// //   currentFocusIndex(-1),
+// //   osdTitle(""),
+// //   osdItems()
+// {
+//     dsyslog("websocket-plugin: Thread-Objekt erfolgreich initialisiert");
+// }
 
 cWebsocketThread::~cWebsocketThread()
 {
@@ -444,137 +454,148 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
         cDevice *primary = cDevice::PrimaryDevice();
         if (primary)
         {
-            j["volume"] = primary->IsMute() ? 0 : primary->CurrentVolume();
-            j["type"] = "volume";
-            return j;
+            j["primary_volume"] = primary->IsMute() ? 0 : primary->CurrentVolume();
         }
+        j["volume"] = ev.number;
+        j["absolute"] = ev.status;
+        j["type"] = "volume";
         break;
     }
 
     case eEventType::OsdClear:
     {
-        clearPending = true;
-        osdItemsChanged = false; // WICHTIG: Liste-Update für diese Runde stoppen
-        lastOsdActivity = std::chrono::steady_clock::now();
-        if (osdMessageOpen)
-        {
-            DeviceEvent ev(DeviceEvent(eEventType::OsdMessage, "", "", -1));
-            osdMessageOpen = false;
-        }
-        return nlohmann::json();
+        // clearPending = true;
+        // osdItemsChanged = false; // WICHTIG: Liste-Update für diese Runde stoppen
+        // lastOsdActivity = std::chrono::steady_clock::now();
+        // if (osdMessageOpen)
+        // {
+        //     DeviceEvent ev(DeviceEvent(eEventType::OsdMessage, "", "", -1));
+        //     osdMessageOpen = false;
+        // }
+        j["type"] = "osd";
+        j["sub"] = "clear";
+        return j;
     }
 
     case eEventType::OsdMessage:
         j["type"] = "osdmessage";
         j["message"] = ev.name;
         j["priority"] = ev.number;
-        osdMessageOpen = true; // remember that the OSD message is open
+        // osdMessageOpen = true; // remember that the OSD message is open
         return j;
 
-    case eEventType::OsdTitle:
-    {
-        if (ev.name.empty())
-        {
-            clearPending = true;
-            osdItems.clear();
-            osdTitle = "";
-            return nlohmann::json();
-        }
+        // case eEventType::OsdTitle:
+        // {
+        //     osdState.SetTitle(ev.name.c_str());
+        //     // if (ev.name.empty())
+        //     // {
+        //     //     clearPending = true;
+        //     //     osdItems.clear();
+        //     //     osdTitle = "";
+        //     //     return nlohmann::json();
+        //     // }
 
-        // Wenn ein NEUER Titel kommt (Ebene tiefer oder neues Menü)
-        if (osdTitle != ev.name)
+        //     // // Wenn ein NEUER Titel kommt (Ebene tiefer oder neues Menü)
+        //     // if (osdTitle != ev.name)
+        //     // {
+        //     //     osdTitle = ev.name;
+        //     //     osdItems.clear();
+        //     //     currentFocusIndex = -1;
+        //     //     osdItemsChanged = true;
+        //     //     clearPending = false; // Hier ist das OSD definitiv wieder "frisch" offen
+        //     // }
+        //     // else
+        //     // {
+        //     //     // GLEICHER Titel (z.B. Back-Taste zurück ins Hauptmenü):
+        //     //     // Wir triggern das Update der Liste NUR, wenn wir nicht
+        //     //     // gerade ein OsdClear (clearPending) erhalten haben.
+        //     //     if (!clearPending)
+        //     //     {
+        //     //         osdItemsChanged = true;
+        //     //     }
+        //     // }
+        //     // lastOsdActivity = std::chrono::steady_clock::now();
+        //     return nlohmann::json();
+        // }
+
+        // case eEventType::OsdItem:
+        // {
+        //     clearPending = false; // Lebenszeichen! OSD ist offen.
+        //     int idx = ev.number;
+        //     if (idx < 0)
+        //         return nlohmann::json();
+
+        //     if (idx >= (int)osdItems.size())
+        //     {
+        //         osdItems.resize(idx + 1, "");
+        //     }
+
+        //     if (osdItems[idx] != ev.name)
+        //     {
+        //         osdItems[idx] = ev.name;
+        //         osdItemsChanged = true;
+        //     }
+        //     lastOsdActivity = std::chrono::steady_clock::now();
+        //     return nlohmann::json();
+        // }
+        // case eEventType::OsdTextItem:
+        // {
+        //     // let's try to handle this like a regular osd item
+        //     clearPending = false; // Lebenszeichen! OSD ist offen.
+        //     int idx = ev.number;
+        //     if (idx < 0)
+        //         return nlohmann::json();
+
+        //     if (idx >= (int)osdItems.size())
+        //     {
+        //         osdItems.resize(idx + 1, "");
+        //     }
+
+        //     if (osdItems[idx] != ev.name)
+        //     {
+        //         osdItems[idx] = ev.name;
+        //         osdItemsChanged = true;
+        //     }
+        //     lastOsdActivity = std::chrono::steady_clock::now();
+        //     return nlohmann::json();
+        // }
+
+        // case eEventType::OsdCurrentItem:
+        // {
+        //     currentFocusIndex = ev.number;
+        //     lastOsdActivity = std::chrono::steady_clock::now();
+        //     focusChanged = true; // Nur Flag setzen, kein Broadcast!
+        //     return nlohmann::json();
+        // }
+
+        // case eEventType::OsdHelpKeys:
+        // {
+        //     clearPending = false; // Lebenszeichen!
+        //     std::stringstream ss(ev.name);
+        //     std::string segment;
+        //     int i = 0;
+
+        //     // Erstmal alle 4 nullen, falls der neue String kürzer ist
+        //     for (int j = 0; j < 4; ++j)
+        //         osdHelp[j] = "";
+
+        //     while (std::getline(ss, segment, '|') && i < 4)
+        //     {
+        //         osdHelp[i] = segment;
+        //         i++;
+        //     }
+
+        //     osdHelpChanged = true;
+        //     lastOsdActivity = std::chrono::steady_clock::now();
+        //     return nlohmann::json();
+        // }
+    case eEventType::JsonString:
+        for (struct mg_connection *c = mgr.conns; c != NULL; c = c->next)
         {
-            osdTitle = ev.name;
-            osdItems.clear();
-            currentFocusIndex = -1;
-            osdItemsChanged = true;
-            clearPending = false; // Hier ist das OSD definitiv wieder "frisch" offen
+            if (c->is_websocket)
+                mg_ws_send(c, ev.name.c_str(), ev.name.size(), WEBSOCKET_OP_TEXT);
         }
-        else
-        {
-            // GLEICHER Titel (z.B. Back-Taste zurück ins Hauptmenü):
-            // Wir triggern das Update der Liste NUR, wenn wir nicht
-            // gerade ein OsdClear (clearPending) erhalten haben.
-            if (!clearPending)
-            {
-                osdItemsChanged = true;
-            }
-        }
-        lastOsdActivity = std::chrono::steady_clock::now();
         return nlohmann::json();
-    }
-
-    case eEventType::OsdItem:
-    {
-        clearPending = false; // Lebenszeichen! OSD ist offen.
-        int idx = ev.number;
-        if (idx < 0)
-            return nlohmann::json();
-
-        if (idx >= (int)osdItems.size())
-        {
-            osdItems.resize(idx + 1, "");
-        }
-
-        if (osdItems[idx] != ev.name)
-        {
-            osdItems[idx] = ev.name;
-            osdItemsChanged = true;
-        }
-        lastOsdActivity = std::chrono::steady_clock::now();
-        return nlohmann::json();
-    }
-    case eEventType::OsdTextItem:
-    {
-        // let's try to handle this like a regular osd item
-        clearPending = false; // Lebenszeichen! OSD ist offen.
-        int idx = ev.number;
-        if (idx < 0)
-            return nlohmann::json();
-
-        if (idx >= (int)osdItems.size())
-        {
-            osdItems.resize(idx + 1, "");
-        }
-
-        if (osdItems[idx] != ev.name)
-        {
-            osdItems[idx] = ev.name;
-            osdItemsChanged = true;
-        }
-        lastOsdActivity = std::chrono::steady_clock::now();
-        return nlohmann::json();
-    }
-
-    case eEventType::OsdCurrentItem:
-    {
-        currentFocusIndex = ev.number;
-        lastOsdActivity = std::chrono::steady_clock::now();
-        focusChanged = true; // Nur Flag setzen, kein Broadcast!
-        return nlohmann::json();
-    }
-
-    case eEventType::OsdHelpKeys:
-    {
-        clearPending = false; // Lebenszeichen!
-        std::stringstream ss(ev.name);
-        std::string segment;
-        int i = 0;
-
-        // Erstmal alle 4 nullen, falls der neue String kürzer ist
-        for (int j = 0; j < 4; ++j)
-            osdHelp[j] = "";
-
-        while (std::getline(ss, segment, '|') && i < 4)
-        {
-            osdHelp[i] = segment;
-            i++;
-        }
-
-        osdHelpChanged = true;
-        lastOsdActivity = std::chrono::steady_clock::now();
-        return nlohmann::json();
-    }
 
     default:
         j["type"] = "unknown";
@@ -589,6 +610,16 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
 
 void cWebsocketThread::SendInitialState(struct mg_connection *c)
 {
+    if (!statusMonitor)
+        return;
+    json osd = statusMonitor->GetCurrentOsdJson();
+    if (!osd.is_null() && !osd["title"].get<std::string>().empty())
+    {
+        std::string s = osd.dump();
+        mg_ws_send(c, s.c_str(), s.size(), WEBSOCKET_OP_TEXT);
+        dsyslog("websocket-plugin: sent initial OSD state to new client");
+    }
+
     json j;
     j["type"] = "initial_full_state";
 
@@ -749,24 +780,31 @@ void cWebsocketThread::BroadcastJson(const DeviceEvent &ev)
 
 void cWebsocketThread::processEvent(const DeviceEvent &ev)
 {
-    // 1. Fokus-Events direkt abhandeln (Performance)
-    if (ev.type == eEventType::OsdCurrentItem)
+    if (ev.type == eEventType::JsonString)
     {
-        currentFocusIndex = ev.number;
-        focusChanged = true;
-        lastOsdActivity = std::chrono::steady_clock::now();
+        // ready to send json string in ev.name
+        for (struct mg_connection *c = mgr.conns; c != NULL; c = c->next)
+        {
+            if (c->is_websocket)
+            {
+                mg_ws_send(c, ev.name.c_str(), ev.name.size(), WEBSOCKET_OP_TEXT);
+            }
+        }
     }
-    // 2. Alle anderen Events durch BuildStatusJson schicken
     else
     {
+        // build json for other events (ChannelChange, etc.)
         json j = BuildStatusJson(ev);
-
-        // WICHTIG: BuildStatusJson setzt intern osdItemsChanged, osdHelpChanged etc.
-        // Wir senden hier NUR, wenn es KEIN OSD-Event war (z.B. ChannelChange, Volume).
-        // OSD-Events geben ein leeres JSON zurück und werden später gesammelt gesendet.
         if (!j.empty())
         {
-            BroadcastJson(j);
+            std::string s = j.dump();
+            for (struct mg_connection *c = mgr.conns; c != NULL; c = c->next)
+            {
+                if (c->is_websocket)
+                {
+                    mg_ws_send(c, s.c_str(), s.size(), WEBSOCKET_OP_TEXT);
+                }
+            }
         }
     }
 }
@@ -789,92 +827,20 @@ void cWebsocketThread::Action()
 
     while (Running())
     {
-        mg_mgr_poll(&mgr, 0);
-
-        // 1. Hole das erste Event (blockierend max 20ms)
-        auto optEv = queue.pop_with_timeout(20);
-        if (optEv)
+        if (statusMonitor)
         {
-            // TRICK: Wenn es ein Fokus-Event ist, warten wir winzige 15ms.
-            // In dieser Zeit füllt der VDR die Queue mit weiteren Fokus-Events vom Scrollen.
-            if (optEv->type == eEventType::OsdCurrentItem)
-            {
-                cCondWait::SleepMs(15);
-            }
-
-            lastQueueActivity = std::chrono::steady_clock::now();
-            processEvent(*optEv);
-
-            // 2. Jetzt saugen wir ALLES leer, was sich in den 15ms angesammelt hat.
-            // Wenn 10 Fokus-Events drin liegen, werden sie hier in Mikrosekunden
-            // verarbeitet (nur die Variable gesetzt), OHNE zu senden!
-            while (auto nextEv = queue.pop_with_timeout(0))
-            {
-                processEvent(*nextEv);
-            }
+            statusMonitor->CheckTimer();
         }
 
-        // 2. Zeitberechnung (Immer ausführen!)
+        while (auto ev = queue.try_pop())
+        {
+            processEvent(*ev);
+        }
+
+        mg_mgr_poll(&mgr, 50);
+
         auto now = std::chrono::steady_clock::now();
-        auto elapsedQueue = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastQueueActivity).count();
-        auto elapsedOsd = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastOsdActivity).count();
-        auto elapsedLastList = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastListSent).count();
 
-        // 3. BROADCAST ENTSCHEIDUNG
-        if (queue.empty())
-        {
-            // A: FOKUS (Balken)
-            if (focusChanged && !osdItemsChanged && elapsedOsd >= 40 && elapsedLastList > 150)
-            {
-                focusChanged = false;
-                BroadcastJson(nlohmann::json({{"type", "osd"}, {"sub", "focus"}, {"index", currentFocusIndex}}));
-            }
-            // B: LISTE ODER TEXT-OSD
-            else if (osdItemsChanged || osdHelpChanged)
-            {
-                if (!osdItems.empty() && !osdTitle.empty() && !clearPending)
-                {
-                    int requiredIdle = (osdItems.size() > 50) ? 600 : 100;
-                    if (elapsedQueue >= requiredIdle)
-                    {
-                        osdItemsChanged = false;
-                        osdHelpChanged = false;
-                        focusChanged = false;
-                        lastListSent = now;
-
-                        nlohmann::json j = {
-                            {"type", "osd"},
-                            {"sub", "list"},
-                            {"items", osdItems},
-                            {"title", osdTitle},
-                            {"focus", currentFocusIndex},
-                            {"red", osdHelp[0]},
-                            {"green", osdHelp[1]},
-                            {"yellow", osdHelp[2]},
-                            {"blue", osdHelp[3]}};
-                        BroadcastJson(j);
-                    }
-                }
-                else if (clearPending)
-                {
-                    // Wenn ein Clear ansteht, verwerfen wir Inhalts-Updates für diese Runde.
-                    // So kann Block C nach 250ms "Stille" feuern.
-                    osdItemsChanged = false;
-                    osdHelpChanged = false;
-                }
-            }
-            // C: CLEAR (Schließen) - Hat jetzt Vorrang vor Block B
-            else if (clearPending && elapsedOsd >= 250)
-            {
-                clearPending = false;
-                osdItems.clear();
-                osdTitle = "";
-                BroadcastJson(nlohmann::json({{"type", "osd"}, {"sub", "clear"}}));
-                isyslog("websocket-plugin: OSD CLOSED AT CLIENT");
-            }
-        }
-
-        // 4. REPLAY / POS / EPG Watchdog
         if (isReplaying)
         {
 
@@ -918,35 +884,27 @@ void cWebsocketThread::Action()
         }
         else
         {
-            bool isOsdActive = !osdItems.empty() || !osdTitle.empty();
-
-            if (!isOsdActive && std::chrono::duration_cast<std::chrono::seconds>(now - lastEpgUpdate).count() >= 60)
+            if (std::chrono::duration_cast<std::chrono::seconds>(now - lastEpgUpdate).count() >= 60)
             {
+                std::string cName;
+                int cNum = 0;
                 {
-                    std::string cName;
-                    int cNum = 0;
+                    LOCK_CHANNELS_READ;
+                    const cChannel *channel = Channels->GetByNumber(cDevice::PrimaryDevice()->CurrentChannel());
+                    if (channel)
                     {
-                        LOCK_CHANNELS_READ;
-                        const cChannel *channel = Channels->GetByNumber(cDevice::PrimaryDevice()->CurrentChannel());
-                        if (channel)
-                        {
-                            cName = channel->Name();
-                            cNum = channel->Number();
-                        }
+                        cName = channel->Name();
+                        cNum = channel->Number();
                     }
-
-                    if (cNum > 0)
-                    {
-                        DeviceEvent ev(eEventType::ChannelChange, cName, "", cNum);
-                        BroadcastJson(ev);
-                    }
-                    lastEpgUpdate = now;
                 }
+
+                if (cNum > 0)
+                {
+                    DeviceEvent ev(eEventType::ChannelChange, cName, "", cNum);
+                    BroadcastJson(ev);
+                }
+                lastEpgUpdate = now;
             }
-        }
-        if (!optEv)
-        {
-            cCondWait::SleepMs(5);
         }
     }
     mg_mgr_free(&mgr);

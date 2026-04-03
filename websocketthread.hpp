@@ -12,8 +12,10 @@
 #include <map>
 #include <mutex>
 #include <string>
-#include "events.hpp"
 #include "mongoose/mongoose.h"
+#include "events.hpp"
+#include "osdState.hpp"
+#include "statusmonitor.hpp"
 
 using json = nlohmann::json;
 
@@ -23,6 +25,7 @@ private:
     std::atomic<bool> clearPending{false};
     // system and networdk
     EventQueue &queue;
+    cWebsocketStatusMonitor *statusMonitor;
     int port;
     std::string logoDir;
     struct mg_mgr mgr;
@@ -31,21 +34,21 @@ private:
     std::map<std::string, std::string> logoCache;
     std::mutex cacheMutex;
 
-    // osd status and flags
-    std::chrono::steady_clock::time_point lastOsdActivity;
-    std::chrono::steady_clock::time_point lastQueueActivity;
-    std::chrono::steady_clock::time_point lastListSent;
-    std::atomic<bool> osdChanged{false};
-    std::atomic<bool> osdItemsChanged{false};
-    std::atomic<bool> osdHelpChanged{false};
-    std::atomic<bool> focusChanged{false};
-    std::atomic<bool> osdMessageOpen{false};
-    int currentFocusIndex{-1};
+    // old stuff, might be superflous with the new implementation
+    // std::chrono::steady_clock::time_point lastOsdActivity;
+    // std::chrono::steady_clock::time_point lastQueueActivity;
+    // std::chrono::steady_clock::time_point lastListSent;
+    // std::atomic<bool> osdChanged{false};
+    // std::atomic<bool> osdItemsChanged{false};
+    // std::atomic<bool> osdHelpChanged{false};
+    // std::atomic<bool> focusChanged{false};
+    // std::atomic<bool> osdMessageOpen{false};
+    // int currentFocusIndex{-1};
 
     // osd cache (data)
-    std::string osdTitle;
-    std::vector<std::string> osdItems;
-    std::string osdHelp[4]; // red, green, yellow, blue
+    // std::string osdTitle;
+    // std::vector<std::string> osdItems;
+    // std::string osdHelp[4]; // red, green, yellow, blue
 
     // helper methods
     std::string toLower(std::string s);
@@ -63,7 +66,7 @@ protected:
     virtual void Action() override;
 
 public:
-    cWebsocketThread(EventQueue &q, int p, std::string ld);
+    cWebsocketThread(EventQueue &q, cWebsocketStatusMonitor *sm, int p, std::string ld);
     virtual ~cWebsocketThread();
 
     void SendInitialState(struct mg_connection *c);

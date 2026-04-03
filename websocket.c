@@ -109,23 +109,21 @@ bool cPluginWebsocket::Initialize(void)
 bool cPluginWebsocket::Start(void)
 {
   dsyslog("websocket-plugin: Starting Server on port %d", port);
-  workerThread = std::make_unique<cWebsocketThread>(eventQueue, port, logoDir);
-  workerThread->Start();
   statusMonitor = std::make_unique<cWebsocketStatusMonitor>(eventQueue);
+  workerThread = std::make_unique<cWebsocketThread>(eventQueue, statusMonitor.get(), port, logoDir);
+  workerThread->Start();
   return true;
 }
 
 void cPluginWebsocket::Stop(void)
 {
-  statusMonitor.reset();
   if (workerThread)
   {
     workerThread->StopThread();
-
     eventQueue.push({eEventType::PluginStop, "SHUTDOWN", 0});
-
     workerThread.reset(); // Wait for the end of thread using the destructor
   }
+  statusMonitor.reset();
 }
 
 void cPluginWebsocket::Housekeeping(void)

@@ -11,7 +11,7 @@ PLUGIN = websocket
 
 ### The version number of this plugin (taken from the main source file):
 
-VERSION = $(shell grep 'static const char \*VERSION *=' $(PLUGIN).c | awk '{ print $$6 }' | sed -e 's/[";]//g')
+VERSION = $(shell grep -E 'static const char \*VERSION\s*=' $(PLUGIN).c | cut -d '"' -f 2)
 
 ### The directory environment:
 
@@ -30,6 +30,7 @@ export CFLAGS   = $(call PKGCFG,cflags)
 export CXXFLAGS = $(call PKGCFG,cxxflags)
 
 CXXFLAGS += -std=c++17 -fPIC
+CFLAGS   += -fPIC
 
 ### The version number of VDR's plugin API:
 
@@ -66,18 +67,39 @@ all: $(SOFILE) i18n
 
 ### Implicit rules:
 
+BASE_FLAGS = $(CPPFLAGS) $(DEFINES) $(INCLUDES) -MMD -MP
+
+### Implicit rules:
+
+BASE_FLAGS = $(CPPFLAGS) $(DEFINES) $(INCLUDES) -MMD -MP
+
+%.o: %.cpp
+	@echo CXX $@
+	$(Q)$(CXX) $(CXXFLAGS) $(BASE_FLAGS) -c -o $@ $<
+
 %.o: %.c
 	@echo CC $@
-	$(Q)$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(DEFINES) $(INCLUDES) -o $@ $<
+	$(Q)$(CC) $(CFLAGS) $(BASE_FLAGS) -c -o $@ $<
+
+$(PLUGIN).o: $(wildcard $(PLUGIN).c) $(wildcard $(PLUGIN).cpp)
+	@echo CXX $@
+	$(Q)$(CXX) $(CXXFLAGS) $(BASE_FLAGS) -x c++ -c -o $@ $<
+
 
 ### Dependencies:
 
 MAKEDEP = $(CXX) -MM -MG
-DEPFILE = .dependencies
-$(DEPFILE): Makefile
-	@$(MAKEDEP) $(CPPFLAGS) $(CXXFLAGS) $(DEFINES) $(INCLUDES) $(OBJS:%.o=%.c) > $@
 
--include $(DEPFILE)
+-include $(OBJS:.o=.d)
+
+### Check for dependencies:
+
+JSON_HEADER = nlohmann/json.hpp
+JSON_CHECK = $(shell echo '\#include <$(JSON_HEADER)>' | $(CXX) $(CXXFLAGS) $(INCLUDES) -E - >/dev/null 2>&1 && echo "ok" || echo "missing")
+
+ifeq ($(JSON_CHECK),missing)
+  $(error "FEHLER: $(JSON_HEADER) nicht gefunden! Bitte 'nlohmann-json3-dev' (Debian/Ubuntu) oder 'nlohmann-json' (Arch/Fedora) installieren.")
+endif
 
 ### Internationalization (I18N):
 
@@ -91,9 +113,14 @@ I18Npot   = $(PODIR)/$(PLUGIN).pot
 	@echo MO $@
 	$(Q)msgfmt -c -o $@ $<
 
-$(I18Npot): $(wildcard *.c)
+I18N_SOURCES = $(wildcard *.c *.cpp *.h *.hpp)
+
+$(I18Npot): $(I18N_SOURCES)
 	@echo GT $@
-	$(Q)xgettext -C -cTRANSLATORS --no-wrap --no-location -k -ktr -ktrNOOP --package-name=vdr-$(PLUGIN) --package-version=$(VERSION) --msgid-bugs-address='<see README>' -o $@ `ls $^`
+	$(Q)xgettext -C -cTRANSLATORS --no-wrap --no-location \
+		-k -ktr -ktrNOOP --package-name=vdr-$(PLUGIN) \
+		--package-version=$(VERSION) \
+		--msgid-bugs-address='<see README>' -o $@ $(I18N_SOURCES)
 
 %.po: $(I18Npot)
 	@echo PO $@
@@ -105,8 +132,6 @@ $(I18Nmsgs): $(DESTDIR)$(LOCDIR)/%/LC_MESSAGES/vdr-$(PLUGIN).mo: $(PODIR)/%.mo
 
 .PHONY: i18n
 i18n: $(I18Nmo) $(I18Npot)
-
-install-i18n: $(I18Nmsgs)
 
 ### Targets:
 

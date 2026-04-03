@@ -20,12 +20,13 @@ enum class eEventType
     SubtitleChange,
     OsdMessage,
     OsdChannel,
-    OsdTitle,
-    OsdItem,
-    OsdTextItem,
+    // OsdTitle,
+    // OsdItem,
+    // OsdTextItem,
     OsdCurrentItem,
-    OsdHelpKeys,
+    // OsdHelpKeys,
     OsdClear,
+    JsonString,
 };
 
 struct DeviceEvent
