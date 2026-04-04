@@ -386,7 +386,9 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
                     j["recording"] = {
                         {"title", safeStr(info->Title())},
                         {"subtitle", safeStr(info->ShortText())},
+                        {"name", safeStr(recording->Name())},
                         {"description", safeStr(info->Description())},
+                        {"start", recording->Start()},
                         {"duration", recording->LengthInSeconds()}};
             }
         }
