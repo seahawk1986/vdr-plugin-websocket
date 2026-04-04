@@ -410,7 +410,7 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
                             j["recording"]["components"][std::to_string(comp)] = json::object();
                             j["recording"]["components"][std::to_string(comp)]["stream"] = component->stream;
                             j["recording"]["components"][std::to_string(comp)]["type"] = component->type;
-                            if (component->language[0] != NULL)
+                            if (component->language[0] != '\0')
                                 j["recording"]["components"][std::to_string(comp)]["language"] = component->language;
                             if (component->description != NULL)
                                 j["recording"]["components"][std::to_string(comp)]["description"] = component->description;
