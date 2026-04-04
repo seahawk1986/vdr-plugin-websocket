@@ -22,7 +22,7 @@ private:
     {
         if (!j.empty())
         {
-            dsyslog("websocket-plugin: OSD Update: %s", j.dump().c_str());
+            Debug("OSD Update: %s", j.dump().c_str());
             queue.push(DeviceEvent(eEventType::JsonString, j.dump()));
         }
     }

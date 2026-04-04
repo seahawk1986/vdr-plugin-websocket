@@ -7,7 +7,7 @@
 # This name will be used in the '-P...' option of VDR to load the plugin.
 # By default the main source file also carries this name.
 
-PLUGIN = websocket
+export PLUGIN = websocket
 
 ### The version number of this plugin (taken from the main source file):
 
@@ -138,6 +138,8 @@ i18n: $(I18Nmo) $(I18Npot)
 $(SOFILE): $(OBJS)
 	@echo LD $@
 	$(Q)$(CXX) $(CXXFLAGS) $(LDFLAGS) -shared $(OBJS) -o $@
+
+install-i18n: $(I18Nmsgs)
 
 install-lib: $(SOFILE)
 	install -D $^ $(DESTDIR)$(LIBDIR)/$^.$(APIVERSION)

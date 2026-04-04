@@ -1,5 +1,6 @@
-#include "websocketthread.hpp"
+#include "common.hpp"
 #include "statusmonitor.hpp"
+#include "websocketthread.hpp"
 #include <vdr/plugin.h>
 #include <vdr/menu.h>
 
@@ -36,7 +37,7 @@ cWebsocketThread::cWebsocketThread(EventQueue &q, cWebsocketStatusMonitor *sm, i
       port(p),
       logoDir(std::move(ld))
 {
-    dsyslog("websocket-plugin: Thread initialisiert");
+    Debug("Thread initialisiert");
 }
 
 cWebsocketThread::~cWebsocketThread()
@@ -102,7 +103,7 @@ void cWebsocketThread::UpdateLogoCache()
         }
     }
     closedir(dir);
-    dsyslog("websocket-plugin: Created logo cache with %zu keys", logoCache.size());
+    Debug("Created logo cache with %zu keys", logoCache.size());
 }
 
 std::string cWebsocketThread::FindLogoInCache(const std::string &request)
@@ -267,15 +268,15 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
         }
         if (channel)
         {
-            dsyslog("websocket-plugin: Lookup logo for '%s'", channel->Name());
+            Debug("Lookup logo for '%s'", channel->Name());
             j["name"] = channel->Name();
 
             // look up if we have a logo
             std::string logo = GetLogoPath(channel);
             if (logo.empty())
             {
-                dsyslog("websocket-plugin: No logo found for '%s'. Cache size: %zu",
-                        channel->Name(), logoCache.size());
+                Debug("No logo found for '%s'. Cache size: %zu",
+                      channel->Name(), logoCache.size());
             }
             std::string logoFile = GetLogoPath(channel);
 
@@ -363,7 +364,7 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
         }
         else
         {
-            esyslog("websocket-plugin: ERROR - channel '%s' (# %d) not in channel list!",
+            esyslog("ERROR - channel '%s' (# %d) not in channel list!",
                     ev.name.c_str(), ev.number);
         }
         return j;
@@ -598,7 +599,7 @@ void cWebsocketThread::SendInitialState(struct mg_connection *c)
     {
         std::string s = osd.dump();
         mg_ws_send(c, s.c_str(), s.size(), WEBSOCKET_OP_TEXT);
-        dsyslog("websocket-plugin: sent initial OSD state to new client");
+        Debug("sent initial OSD state to new client");
     }
 
     json j;
@@ -797,7 +798,7 @@ void cWebsocketThread::Action()
     std::string url = "ws://0.0.0.0:" + std::to_string(port);
     if (!mg_http_listen(&mgr, url.c_str(), on_connect_callback, NULL))
     {
-        esyslog("websocket-plugin: ERROR during startup");
+        esyslog("ERROR during startup");
         return;
     }
     UpdateLogoCache();

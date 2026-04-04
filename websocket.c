@@ -20,11 +20,16 @@
 using nlohmann::json;
 #include "mongoose/mongoose.h"
 
+#include "common.hpp"
+#include "config.hpp"
 #include "events.hpp"
 #include "statusmonitor.hpp"
 #include "websocketthread.hpp"
+#include "menu.hpp"
 
-static const char *VERSION = "0.0.1";
+tWebsocketConfig WebsocketConfig = {0};
+
+static const char *VERSION = "0.0.2";
 static const char *DESCRIPTION = "Send VDR status via websocket";
 static const char *MAINMENUENTRY = "Websocket";
 
@@ -84,7 +89,7 @@ bool cPluginWebsocket::ProcessArgs(int argc, char *argv[])
       port = std::atoi(optarg);
       if (port <= 0 || port > 65535)
       {
-        fprintf(stderr, "websocket-plugin: Ungültiger Port '%s'\n", optarg);
+        fprintf(stderr, "Ungültiger Port '%s'\n", optarg);
         return false;
       }
       break;
@@ -108,7 +113,7 @@ bool cPluginWebsocket::Initialize(void)
 
 bool cPluginWebsocket::Start(void)
 {
-  dsyslog("websocket-plugin: Starting Server on port %d", port);
+  Debug("Starting Server on port %d", port);
   statusMonitor = std::make_unique<cWebsocketStatusMonitor>(eventQueue);
   workerThread = std::make_unique<cWebsocketThread>(eventQueue, statusMonitor.get(), port, logoDir);
   workerThread->Start();
@@ -151,13 +156,16 @@ cOsdObject *cPluginWebsocket::MainMenuAction(void)
 
 cMenuSetupPage *cPluginWebsocket::SetupMenu(void)
 {
-  // Return a setup menu in case the plugin supports one.
-  return NULL;
+  return new cWebsocketSetupPage;
 }
 
 bool cPluginWebsocket::SetupParse(const char *Name, const char *Value)
 {
-  // Parse your own setup parameters and store their values.
+  if (strcasecmp(Name, "ShowDebug") == 0)
+  {
+    WebsocketConfig.ShowDebug = atoi(Value);
+    return true;
+  }
   return false;
 }
 

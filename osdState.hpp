@@ -51,7 +51,7 @@ public:
             k.clear();
         isTextMode = false;
         textContent.clear();
-        dsyslog("websocket-plugin: OSD State cleared");
+        Debug("OSD State cleared");
     }
 
     void ClearStatusMessage()
@@ -86,7 +86,7 @@ public:
     void UpdateItem(const char *Text, int Index, bool Selectable)
     {
         std::lock_guard<std::recursive_mutex> lock(stateMutex);
-        dsyslog("websocket-plugin: Update item: '%s' at idx %d, selectable: %d", Text, Index, Selectable);
+        Debug("Update item: '%s' at idx %d, selectable: %d", Text, Index, Selectable);
         isTextMode = false;
         if (Index >= (int)items.size())
             items.resize(Index + 1);
