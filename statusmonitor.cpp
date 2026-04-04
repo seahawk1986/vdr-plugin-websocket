@@ -1,4 +1,4 @@
-#include <magic_enum/magic_enum.hpp>
+#include "magic_enum/magic_enum.hpp"
 #include "common.hpp"
 #include "statusmonitor.hpp"
 #include <vdr/plugin.h>
