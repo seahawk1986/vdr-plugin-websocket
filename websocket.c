@@ -62,8 +62,8 @@ public:
 const char *cPluginWebsocket::CommandLineHelp(void)
 {
   static std::string helpText =
-      std::string("  -p PORT,  --port=PORT    Port für den WebSocket-Server (Standard: ") + std::to_string(port) + ")\n" +
-      "  -l DIR,   --logodir=DIR     Pfad zu den Kanallogos (Standard: " + logoDir + ")\n";
+      std::string("  -p PORT,  --port=PORT     port for the websocket server (default: ") + std::to_string(port) + ")\n" +
+      "  -l DIR,   --logodir=DIR   directory with channel logos (default: " + logoDir + ")\n";
 
   return helpText.c_str();
 }
