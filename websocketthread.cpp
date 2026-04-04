@@ -383,13 +383,40 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
             {
                 const cRecordingInfo *info = recording->Info();
                 if (info)
+                {
+
                     j["recording"] = {
                         {"title", safeStr(info->Title())},
                         {"subtitle", safeStr(info->ShortText())},
                         {"name", safeStr(recording->Name())},
                         {"description", safeStr(info->Description())},
                         {"start", recording->Start()},
-                        {"duration", recording->LengthInSeconds()}};
+                        {"duration", recording->LengthInSeconds()},
+                        {"fps", info->FramesPerSecond()},
+                        {"sizeMB", recording->FileSizeMB()},
+                        {"isNew", recording->IsNew()},
+                        {"isEdited", recording->IsEdited()},
+                        {"components", json::object()},
+                    };
+                }
+                const cComponents *components = info->Components();
+                if ((components != NULL) && (components->NumComponents() > 0))
+                {
+                    for (int comp = 0; comp < components->NumComponents(); comp++)
+                    {
+                        tComponent *component = components->Component(comp);
+                        if (component != NULL)
+                        {
+                            j["recording"]["components"][std::to_string(comp)] = json::object();
+                            j["recording"]["components"][std::to_string(comp)]["stream"] = component->stream;
+                            j["recording"]["components"][std::to_string(comp)]["type"] = component->type;
+                            if (component->language[0] != NULL)
+                                j["recording"]["components"][std::to_string(comp)]["language"] = component->language;
+                            if (component->description != NULL)
+                                j["recording"]["components"][std::to_string(comp)]["description"] = component->description;
+                        }
+                    }
+                }
             }
         }
         break;
