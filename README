@@ -20,3 +20,12 @@ This plugin exposes vdr status information via a websocket connection.
 Required packages:
 Debian/Ubuntu: nlohmann-json3-dev
 SuSE: nlohmann_json-devel
+
+Configuration:
+
+  -p PORT,  --port=PORT    port for the websocket server (default: 6742)
+  -l DIR,   --logodir=DIR     path for channel logos folder (default: /var/lib/vdr/channellogos/)
+
+Frontends:
+
+https://github.com/seahawk1986/vdr-websocket-status is an example Client for vdr-plugin-websocket
