@@ -155,4 +155,4 @@ dist: $(I18Npo) clean
 clean:
 	@-rm -f $(PODIR)/*.mo $(PODIR)/*.pot
 	@-rm -f $(OBJS) $(DEPFILE) *.so *.tgz core* *~
-	@-rm -f *.d */*.d
+	@-find . -name "*.d" -type f -delete
