@@ -7,6 +7,7 @@
 #include <mutex> // Neu: Für Thread-Sicherheit
 #include <algorithm>
 #include <nlohmann/json.hpp>
+#include "common.hpp"
 
 using json = nlohmann::json;
 
@@ -64,23 +65,23 @@ public:
     void SetStatusMessage(const char *Message)
     {
         std::lock_guard<std::recursive_mutex> lock(stateMutex);
-        statusMessage = Message ? Message : "";
+        statusMessage = safeStr(Message);
         hasStatusMessage = (Message != nullptr);
     }
 
     void SetTitle(const char *Text)
     {
         std::lock_guard<std::recursive_mutex> lock(stateMutex);
-        title = Text ? Text : "";
+        title = safeStr(Text);
     }
 
     void SetHelpKeys(const char *Red, const char *Green, const char *Yellow, const char *Blue)
     {
         std::lock_guard<std::recursive_mutex> lock(stateMutex);
-        helpKeys[0] = Red ? Red : "";
-        helpKeys[1] = Green ? Green : "";
-        helpKeys[2] = Yellow ? Yellow : "";
-        helpKeys[3] = Blue ? Blue : "";
+        helpKeys[0] = safeStr(Red);
+        helpKeys[1] = safeStr(Green);
+        helpKeys[2] = safeStr(Yellow);
+        helpKeys[3] = safeStr(Blue);
     }
 
     void UpdateItem(const char *Text, int Index, bool Selectable)
@@ -90,7 +91,7 @@ public:
         isTextMode = false;
         if (Index >= (int)items.size())
             items.resize(Index + 1);
-        items[Index] = {Text ? Text : "", Selectable};
+        items[Index] = {safeStr(Text), Selectable};
         itemsWrittenThisCycle = std::max(itemsWrittenThisCycle, Index + 1);
     }
 
@@ -118,7 +119,7 @@ public:
         {
             if (Index >= (int)items.size())
                 items.resize(Index + 1);
-            items[Index] = {Text ? Text : "", true};
+            items[Index] = {safeStr(Text), true};
         }
     }
 

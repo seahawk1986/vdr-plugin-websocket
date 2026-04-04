@@ -33,7 +33,7 @@ void cWebsocketStatusMonitor::Replaying(const cControl *Control, const char *Nam
     if (On && Name)
     {
         Debug("Replay started: %s", Name);
-        queue.push(DeviceEvent(eEventType::ReplayStart, Name, FileName ? FileName : "", 0));
+        queue.push(DeviceEvent(eEventType::ReplayStart, Name, safeStr(FileName), 0));
     }
     else
     {
@@ -51,7 +51,7 @@ void cWebsocketStatusMonitor::TimerChange(const cTimer *Timer, eTimerChange Chan
 
 void cWebsocketStatusMonitor::Recording(const cDevice *Device, const char *Name, const char *FileName, bool On)
 {
-    queue.push(DeviceEvent(eEventType::Recording, Name ? Name : "", FileName ? FileName : "", Device->DeviceNumber(), On));
+    queue.push(DeviceEvent(eEventType::Recording, safeStr(Name), safeStr(FileName), Device->DeviceNumber(), On));
 }
 
 void cWebsocketStatusMonitor::SetVolume(int Volume, bool Absolute)
@@ -62,7 +62,7 @@ void cWebsocketStatusMonitor::SetVolume(int Volume, bool Absolute)
 
 void cWebsocketStatusMonitor::SetAudioTrack(int Index, const char *const *Tracks)
 {
-    const auto track = Tracks && Tracks[Index] ? Tracks[Index] : "";
+    const auto track = Tracks && Tracks[Index] ? safeStr(Tracks[Index]) : "";
     Debug("SetAudioTrack to %d: %s", Index, track);
     queue.push(DeviceEvent(eEventType::AudioTrackChange, track, "", Index));
 }
@@ -75,7 +75,7 @@ void cWebsocketStatusMonitor::SetAudioChannel(int AudioChannel)
 
 void cWebsocketStatusMonitor::SetSubtitleTrack(int Index, const char *const *Tracks)
 {
-    const auto track = Tracks && Tracks[Index] ? Tracks[Index] : "";
+    const auto track = Tracks && Tracks[Index] ? safeStr(Tracks[Index]) : "";
     Debug("SetSubtitleTrack to %d: %s", Index, track);
     queue.push(DeviceEvent(eEventType::SubtitleChange, track, "", Index));
 }
@@ -108,7 +108,7 @@ void cWebsocketStatusMonitor::OsdChannel(const char *Text)
 {
     std::lock_guard<std::mutex> lock(osdMutex);
     Debug("OsdChannel: '%s", Text);
-    queue.push(DeviceEvent(eEventType::OsdChannel, Text ? Text : ""));
+    queue.push(DeviceEvent(eEventType::OsdChannel, safeStr(Text)));
 }
 
 void cWebsocketStatusMonitor::OsdTitle(const char *Title)

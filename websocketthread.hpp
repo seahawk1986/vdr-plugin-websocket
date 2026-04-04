@@ -34,21 +34,7 @@ private:
     std::map<std::string, std::string> logoCache;
     std::mutex cacheMutex;
 
-    // old stuff, might be superflous with the new implementation
-    // std::chrono::steady_clock::time_point lastOsdActivity;
-    // std::chrono::steady_clock::time_point lastQueueActivity;
-    // std::chrono::steady_clock::time_point lastListSent;
-    // std::atomic<bool> osdChanged{false};
-    // std::atomic<bool> osdItemsChanged{false};
-    // std::atomic<bool> osdHelpChanged{false};
-    // std::atomic<bool> focusChanged{false};
-    // std::atomic<bool> osdMessageOpen{false};
-    // int currentFocusIndex{-1};
-
-    // osd cache (data)
-    // std::string osdTitle;
-    // std::vector<std::string> osdItems;
-    // std::string osdHelp[4]; // red, green, yellow, blue
+    std::atomic<bool> isReplaying{false};
 
     // helper methods
     std::string toLower(std::string s);

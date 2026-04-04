@@ -351,8 +351,8 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
                             progress = std::clamp((int)((now - e->StartTime()) * 100 / duration), 0, 100);
                         }
                         j["epg"][key] = {
-                            {"title", e->Title() ? e->Title() : ""},
-                            {"short_text", (e->ShortText() && *e->ShortText()) ? e->ShortText() : ""},
+                            {"title", safeStr(e->Title())},
+                            {"short_text", safeStr(e->ShortText())},
                             {"start", (long)e->StartTime()},
                             {"duration", duration},
                             {"progress", progress}};
@@ -371,6 +371,7 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
     }
     case eEventType::ReplayStart:
     {
+        isReplaying = true;
         if (!ev.fileName.empty())
         {
             j["name"] = ev.name;
@@ -383,16 +384,16 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
                 const cRecordingInfo *info = recording->Info();
                 if (info)
                     j["recording"] = {
-                        {"title", info->Title() ? info->Title() : recording->Title() ? recording->Title()
-                                                                                     : recording->Name()},
-                        {"subtitle", info->ShortText() ? info->ShortText() : nullptr},
-                        {"description", (info->Description() && *info->Description()) ? info->Description() : ""},
+                        {"title", safeStr(info->Title())},
+                        {"subtitle", safeStr(info->ShortText())},
+                        {"description", safeStr(info->Description())},
                         {"duration", recording->LengthInSeconds()}};
             }
         }
         break;
     }
     case eEventType::ReplayStop:
+        isReplaying = false;
         j["type"] = "replay";
         j["status"] = "stopped";
         return j;
@@ -466,111 +467,6 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
         // osdMessageOpen = true; // remember that the OSD message is open
         return j;
 
-        // case eEventType::OsdTitle:
-        // {
-        //     osdState.SetTitle(ev.name.c_str());
-        //     // if (ev.name.empty())
-        //     // {
-        //     //     clearPending = true;
-        //     //     osdItems.clear();
-        //     //     osdTitle = "";
-        //     //     return nlohmann::json();
-        //     // }
-
-        //     // // Wenn ein NEUER Titel kommt (Ebene tiefer oder neues Menü)
-        //     // if (osdTitle != ev.name)
-        //     // {
-        //     //     osdTitle = ev.name;
-        //     //     osdItems.clear();
-        //     //     currentFocusIndex = -1;
-        //     //     osdItemsChanged = true;
-        //     //     clearPending = false; // Hier ist das OSD definitiv wieder "frisch" offen
-        //     // }
-        //     // else
-        //     // {
-        //     //     // GLEICHER Titel (z.B. Back-Taste zurück ins Hauptmenü):
-        //     //     // Wir triggern das Update der Liste NUR, wenn wir nicht
-        //     //     // gerade ein OsdClear (clearPending) erhalten haben.
-        //     //     if (!clearPending)
-        //     //     {
-        //     //         osdItemsChanged = true;
-        //     //     }
-        //     // }
-        //     // lastOsdActivity = std::chrono::steady_clock::now();
-        //     return nlohmann::json();
-        // }
-
-        // case eEventType::OsdItem:
-        // {
-        //     clearPending = false; // Lebenszeichen! OSD ist offen.
-        //     int idx = ev.number;
-        //     if (idx < 0)
-        //         return nlohmann::json();
-
-        //     if (idx >= (int)osdItems.size())
-        //     {
-        //         osdItems.resize(idx + 1, "");
-        //     }
-
-        //     if (osdItems[idx] != ev.name)
-        //     {
-        //         osdItems[idx] = ev.name;
-        //         osdItemsChanged = true;
-        //     }
-        //     lastOsdActivity = std::chrono::steady_clock::now();
-        //     return nlohmann::json();
-        // }
-        // case eEventType::OsdTextItem:
-        // {
-        //     // let's try to handle this like a regular osd item
-        //     clearPending = false; // Lebenszeichen! OSD ist offen.
-        //     int idx = ev.number;
-        //     if (idx < 0)
-        //         return nlohmann::json();
-
-        //     if (idx >= (int)osdItems.size())
-        //     {
-        //         osdItems.resize(idx + 1, "");
-        //     }
-
-        //     if (osdItems[idx] != ev.name)
-        //     {
-        //         osdItems[idx] = ev.name;
-        //         osdItemsChanged = true;
-        //     }
-        //     lastOsdActivity = std::chrono::steady_clock::now();
-        //     return nlohmann::json();
-        // }
-
-        // case eEventType::OsdCurrentItem:
-        // {
-        //     currentFocusIndex = ev.number;
-        //     lastOsdActivity = std::chrono::steady_clock::now();
-        //     focusChanged = true; // Nur Flag setzen, kein Broadcast!
-        //     return nlohmann::json();
-        // }
-
-        // case eEventType::OsdHelpKeys:
-        // {
-        //     clearPending = false; // Lebenszeichen!
-        //     std::stringstream ss(ev.name);
-        //     std::string segment;
-        //     int i = 0;
-
-        //     // Erstmal alle 4 nullen, falls der neue String kürzer ist
-        //     for (int j = 0; j < 4; ++j)
-        //         osdHelp[j] = "";
-
-        //     while (std::getline(ss, segment, '|') && i < 4)
-        //     {
-        //         osdHelp[i] = segment;
-        //         i++;
-        //     }
-
-        //     osdHelpChanged = true;
-        //     lastOsdActivity = std::chrono::steady_clock::now();
-        //     return nlohmann::json();
-        // }
     case eEventType::JsonString:
         for (struct mg_connection *c = mgr.conns; c != NULL; c = c->next)
         {
@@ -652,6 +548,7 @@ void cWebsocketThread::SendInitialState(struct mg_connection *c)
 
         if (control)
         {
+            isReplaying = true;
             j["replaying"] = true;
 
             // try to read the info file of the recording
@@ -803,7 +700,6 @@ void cWebsocketThread::Action()
     }
     UpdateLogoCache();
 
-    bool isReplaying = false;
     auto lastPosUpdate = std::chrono::steady_clock::now();
     auto lastEpgUpdate = std::chrono::steady_clock::now();
 
@@ -816,6 +712,8 @@ void cWebsocketThread::Action()
 
         while (auto ev = queue.try_pop())
         {
+            if (ev->type == eEventType::PluginStop)
+                break;
             processEvent(*ev);
         }
 
@@ -828,7 +726,8 @@ void cWebsocketThread::Action()
 
             if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastPosUpdate).count() >= 1000)
             {
-                int current = 0, total = 0;
+                int current = 0;
+                int total = 0;
                 bool play = true, forward = true;
                 int speed = 0;
                 double fps = 25.0;

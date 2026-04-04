@@ -6,6 +6,9 @@
 #include <string>
 #include "config.hpp"
 
+static constexpr auto safeStr = [](const char *s)
+{ return s ? s : ""; };
+
 inline void Debug(const char *Format, ...)
 {
     if (WebsocketConfig.ShowDebug)
