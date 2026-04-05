@@ -229,7 +229,7 @@ void cWebsocketThread::on_connect_callback(struct mg_connection *c, int ev, void
             return;
         }
 
-        // HTTP websocket upgrade
+        // handle HTTP websocket upgrade
         if (mg_match(hm->uri, mg_str("/"), NULL) && mg_http_get_header(hm, "Upgrade") != NULL)
         {
             mg_ws_upgrade(c, hm, NULL);

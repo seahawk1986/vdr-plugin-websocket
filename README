@@ -23,8 +23,9 @@ SuSE: nlohmann_json-devel
 
 Configuration:
 
-  -p PORT,  --port=PORT    port for the websocket server (default: 6742)
-  -l DIR,   --logodir=DIR     path for channel logos folder (default: /var/lib/vdr/channellogos/)
+  -p PORT,  --port=PORT     port for the websocket server (default: 6742)
+  -l DIR,   --logodir=DIR   path for channel logos folder (default: /var/lib/vdr/channellogos/)
+  -w WEBDIR --webdir=WEBDIR path for the webfrontend that should be served by the plugin's webserver
 
 Frontends:
 

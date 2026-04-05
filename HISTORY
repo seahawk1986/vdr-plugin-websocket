@@ -1,6 +1,27 @@
 VDR Plugin 'websocket' Revision History
 ---------------------------------------
 
-2026-03-30: Version 0.0.1
+2026-03-30: Version 0.0.0
 
 - Initial revision.
+- fledge out information for various cStatus events
+
+2026-04-04: Version 0.0.1
+- first implementation for OSD status handling
+
+2026-04-04: Version 0.0.2
+- add setup option to control debug output
+
+2026-04-04: Version 0.0.3
+- rework OSD status events
+
+2026-04-04: Version 0.0.4
+- add support for no_osd URL parameter to disable displaying the OSD
+- fix include path for magic_enum
+- add setup entry to disable debug output
+- add more details to recording infos
+
+2026-04-05: Version 0.0.5
+- fix crash on plugin/vdr shutdown
+- Add ability to act as a webserver for the webfrontend.
+  Place the necessary data in the WEBDIR passed to the plugin via it's start arguments
