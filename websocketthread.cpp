@@ -149,7 +149,7 @@ std::string cWebsocketThread::GetLogoPath(const cChannel *channel)
         return found;
 
     // 2. look for part without channel group
-    std::string name = channel->Name();
+    std::string name = safeStr(channel->Name());
     size_t semi = name.find(';');
     if (semi != std::string::npos)
     {
@@ -259,7 +259,7 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
             for (const cChannel *c = Channels->First(); c; c = Channels->Next(c))
             {
                 // compare the name (VDR names can contain provider infos after a ';')
-                if (c->Name() && strcmp(c->Name(), ev.name.c_str()) == 0)
+                if (c->Name() && strcmp(safeStr(c->Name()), ev.name.c_str()) == 0)
                 {
                     channel = c;
                     break;
@@ -412,7 +412,7 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
                             j["recording"]["components"][std::to_string(comp)]["type"] = component->type;
                             if (component->language[0] != '\0')
                                 j["recording"]["components"][std::to_string(comp)]["language"] = component->language;
-                            if (component->description != NULL)
+                            if (component->description[0] != '\0')
                                 j["recording"]["components"][std::to_string(comp)]["description"] = component->description;
                         }
                     }
@@ -566,7 +566,7 @@ void cWebsocketThread::SendInitialState(struct mg_connection *c)
         const cChannel *channel = Channels->GetByNumber(cDevice::PrimaryDevice()->CurrentChannel());
         if (channel)
         {
-            DeviceEvent ev(eEventType::ChannelChange, channel->Name(), "", channel->Number());
+            DeviceEvent ev(eEventType::ChannelChange, safeStr(channel->Name()), "", channel->Number());
             j["current_display"] = BuildStatusJson(ev); // Nutzt deine EPG-Logik
         }
     }
@@ -625,7 +625,7 @@ void cWebsocketThread::SendInitialState(struct mg_connection *c)
                 const cChannel *channel = Channels->GetByNumber(cDevice::PrimaryDevice()->CurrentChannel());
                 if (channel)
                 {
-                    cName = channel->Name();
+                    cName = safeStr(channel->Name());
                     cNum = channel->Number();
                 }
             }
@@ -803,7 +803,7 @@ void cWebsocketThread::Action()
                     const cChannel *channel = Channels->GetByNumber(cDevice::PrimaryDevice()->CurrentChannel());
                     if (channel)
                     {
-                        cName = channel->Name();
+                        cName = safeStr(channel->Name());
                         cNum = channel->Number();
                     }
                 }
