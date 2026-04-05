@@ -33,7 +33,7 @@ void cWebsocketStatusMonitor::Replaying(const cControl *Control, const char *Nam
     if (On && Name)
     {
         Debug("Replay started: %s", Name);
-        queue.push(DeviceEvent(eEventType::ReplayStart, Name, safeStr(FileName), 0));
+        queue.push(DeviceEvent(eEventType::ReplayStart, safeStr(Name), safeStr(FileName), 0));
     }
     else
     {

@@ -399,6 +399,7 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
                 if (info)
                 {
 
+                    Debug("building recording json");
                     j["recording"] = {
                         {"title", safeStr(info->Title())},
                         {"subtitle", safeStr(info->ShortText())},
@@ -412,22 +413,40 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
                         {"isEdited", recording->IsEdited()},
                         {"components", json::object()},
                     };
-                }
-                const cComponents *components = info->Components();
-                if ((components != NULL) && (components->NumComponents() > 0))
-                {
-                    for (int comp = 0; comp < components->NumComponents(); comp++)
+                    Debug("building component json");
+
+                    LOCK_THREAD;
+                    const cComponents *components = info->Components();
+                    if ((components) && (components->NumComponents() > 0))
                     {
-                        tComponent *component = components->Component(comp);
-                        if (component != NULL)
+                        for (int comp = 0; comp < components->NumComponents(); comp++)
                         {
-                            j["recording"]["components"][std::to_string(comp)] = json::object();
-                            j["recording"]["components"][std::to_string(comp)]["stream"] = component->stream;
-                            j["recording"]["components"][std::to_string(comp)]["type"] = component->type;
-                            if (component->language[0] != '\0')
-                                j["recording"]["components"][std::to_string(comp)]["language"] = component->language;
-                            if (component->description[0] != '\0')
-                                j["recording"]["components"][std::to_string(comp)]["description"] = component->description;
+                            tComponent *component = components->Component(comp);
+                            if (component)
+                            {
+                                std::string key = std::to_string(comp);
+                                json cObj = json::object();
+                                cObj["stream"] = (int)component->stream;
+                                cObj["type"] = (int)component->type;
+
+                                if (component->language[0] != '\0')
+                                    cObj["language"] = std::string(component->language, strnlen(component->language, 4));
+
+                                if (component->description && component->description[0] != '\0')
+                                {
+                                    try
+                                    {
+                                        cObj["description"] = std::string(component->description);
+                                    }
+                                    catch (...)
+                                    {
+                                        Debug("String error in component %d", comp);
+                                        cObj["description"] = "encoding error";
+                                    }
+                                }
+
+                                j["recording"]["components"][key] = cObj;
+                            }
                         }
                     }
                 }
