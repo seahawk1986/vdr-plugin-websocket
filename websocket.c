@@ -40,6 +40,7 @@ private:
   std::unique_ptr<cWebsocketStatusMonitor> statusMonitor;
   int port{6742};
   std::string logoDir{"/var/lib/vdr/channellogos/"};
+  std::string webDir{"/var/lib/vdr/plugins/websocket/web/"};
   std::unique_ptr<cWebsocketThread> workerThread;
 public:
   cPluginWebsocket() = default;
@@ -68,7 +69,8 @@ const char *cPluginWebsocket::CommandLineHelp(void)
 {
   static std::string helpText =
       std::string("  -p PORT,  --port=PORT     port for the websocket server (default: ") + std::to_string(port) + ")\n" +
-      "  -l DIR,   --logodir=DIR   directory with channel logos (default: " + logoDir + ")\n";
+      "  -l DIR,   --logodir=DIR   directory with channel logos (default: " + logoDir + ")\n" +
+      "  -w WEBDIR --webdir=WEBDIR directory with webfrontend to serve (default: " + webDir + ")\n";
 
   return helpText.c_str();
 }
@@ -78,10 +80,11 @@ bool cPluginWebsocket::ProcessArgs(int argc, char *argv[])
   static const struct option long_options[] = {
       {"port", required_argument, nullptr, 'p'},
       {"logodir", required_argument, nullptr, 'l'},
+      {"webdir", required_argument, nullptr, 'w'},
       {nullptr, 0, nullptr, 0}};
 
   int c;
-  while ((c = getopt_long(argc, argv, "p:l:", long_options, nullptr)) != -1)
+  while ((c = getopt_long(argc, argv, "p:l:w:", long_options, nullptr)) != -1)
   {
     switch (c)
     {
@@ -97,6 +100,11 @@ bool cPluginWebsocket::ProcessArgs(int argc, char *argv[])
       logoDir = optarg;
       if (logoDir.back() != '/')
         logoDir += '/'; // make sure the path ends with a slash
+      break;
+    case 'w':
+      webDir = optarg;
+      if (webDir.back() != '/')
+        webDir += '/';
       break;
     default:
       return false;
@@ -115,7 +123,7 @@ bool cPluginWebsocket::Start(void)
 {
   Debug("Starting Server on port %d", port);
   statusMonitor = std::make_unique<cWebsocketStatusMonitor>(eventQueue);
-  workerThread = std::make_unique<cWebsocketThread>(eventQueue, statusMonitor.get(), port, logoDir);
+  workerThread = std::make_unique<cWebsocketThread>(eventQueue, statusMonitor.get(), port, logoDir, webDir);
   workerThread->Start();
   return true;
 }

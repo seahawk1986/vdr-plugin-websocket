@@ -30,12 +30,13 @@ bool isEqualCaseInsensitive(const std::string &a, const std::string &b)
     return strcasecmp(a.c_str(), b.c_str()) == 0;
 }
 
-cWebsocketThread::cWebsocketThread(EventQueue &q, cWebsocketStatusMonitor *sm, int p, std::string ld)
+cWebsocketThread::cWebsocketThread(EventQueue &q, cWebsocketStatusMonitor *sm, int p, std::string ld, std::string wd)
     : cThread("websocket-worker"),
       queue(q),
       statusMonitor(sm), // Zuweisung im Konstruktor
       port(p),
-      logoDir(std::move(ld))
+      logoDir(std::move(ld)),
+      webDir(std::move(wd))
 {
     Debug("Thread initialisiert");
 }
@@ -181,6 +182,18 @@ void cWebsocketThread::on_connect_callback(struct mg_connection *c, int ev, void
         // check if mgr.userdata is (unlikely) NULL
         if (!self)
             return;
+
+        if (mg_match(hm->uri, mg_str("/web/#"), NULL))
+        {
+            struct mg_http_serve_opts opts = {};
+            // Setze das Wurzelverzeichnis auf dein lokales Web-Verzeichnis
+            // Beispiel: "/var/www/html" oder ein Pfad aus deiner Konfiguration
+            opts.root_dir = "/var/lib/vdr/plugins/websocket/web/";
+
+            // mg_http_serve_dir übernimmt den Schutz gegen "../" automatisch!
+            mg_http_serve_dir(c, hm, &opts);
+            return;
+        }
 
         if (mg_match(hm->uri, mg_str("/logos/#"), NULL))
         {

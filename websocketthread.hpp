@@ -28,6 +28,7 @@ private:
     cWebsocketStatusMonitor *statusMonitor;
     int port;
     std::string logoDir;
+    std::string webDir;
     struct mg_mgr mgr;
 
     // logo cache and updates
@@ -52,7 +53,7 @@ protected:
     virtual void Action() override;
 
 public:
-    cWebsocketThread(EventQueue &q, cWebsocketStatusMonitor *sm, int p, std::string ld);
+    cWebsocketThread(EventQueue &q, cWebsocketStatusMonitor *sm, int p, std::string ld, std::string wd);
     virtual ~cWebsocketThread();
 
     void SendInitialState(struct mg_connection *c);
