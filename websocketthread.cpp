@@ -182,20 +182,10 @@ void cWebsocketThread::on_connect_callback(struct mg_connection *c, int ev, void
         if (!self)
             return;
 
-        if (mg_match(hm->uri, mg_str("/web/#"), NULL))
-        {
-            dsyslog("Webserver access on %.*s", (int)hm->uri.len, hm->uri.buf);
-            struct mg_http_serve_opts opts = {};
-
-            opts.root_dir = self->webDir.c_str();
-
-            mg_http_serve_dir(c, hm, &opts);
-            return;
-        }
-
+        // handle channel logo requests
         if (mg_match(hm->uri, mg_str("/logos/#"), NULL))
         {
-            // 1. Pfad nach "/logos/" extrahieren
+            // 1. remove "/logos/" from path
             // Wir prüfen, ob die URI überhaupt lang genug ist
             if (hm->uri.len <= 7)
             {
@@ -205,9 +195,9 @@ void cWebsocketThread::on_connect_callback(struct mg_connection *c, int ev, void
 
             std::string uriPath(hm->uri.buf + 7, hm->uri.len - 7);
 
-            // 2. URL-Decoding mit festem Puffer
+            // 2. URL-Decoding with fixed buffer
             char decoded[512];
-            // mg_url_decode gibt die Länge zurück. Bei Fehlern (z.B. % am Ende) ist es < 0.
+            // mg_url_decode returns the length. In case of errors (e.g. ends with '%') it returns values < 0.
             int len = mg_url_decode(uriPath.c_str(), uriPath.size(), decoded, sizeof(decoded), 0);
 
             // check decoded length
@@ -225,7 +215,7 @@ void cWebsocketThread::on_connect_callback(struct mg_connection *c, int ev, void
                     return;
                 }
             }
-            // Fallback to default.png oder 404
+            // Fallback to default.png or 404
             std::string defaultPath = self->getLogoDir() + "default.png";
             if (access(defaultPath.c_str(), F_OK) == 0)
             {
@@ -236,12 +226,25 @@ void cWebsocketThread::on_connect_callback(struct mg_connection *c, int ev, void
             {
                 mg_http_reply(c, 404, "", "Not found\n");
             }
+            return;
         }
-        else if (mg_match(hm->uri, mg_str("/"), NULL))
+
+        // HTTP websocket upgrade
+        if (mg_match(hm->uri, mg_str("/"), NULL) && mg_http_get_header(hm, "Upgrade") != NULL)
         {
             mg_ws_upgrade(c, hm, NULL);
+            return;
         }
+
+        // the other requests are passed to look up files in the webDir
+        struct mg_http_serve_opts opts = {};
+        opts.root_dir = self->webDir.c_str();
+
+        mg_http_serve_dir(c, hm, &opts);
+        return;
     }
+
+    // handle websocket connection
     else if (ev == MG_EV_WS_OPEN)
     {
         auto *self = static_cast<cWebsocketThread *>(c->mgr->userdata);
