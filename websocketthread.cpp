@@ -179,18 +179,16 @@ void cWebsocketThread::on_connect_callback(struct mg_connection *c, int ev, void
         struct mg_http_message *hm = (struct mg_http_message *)ev_data;
         auto *self = static_cast<cWebsocketThread *>(c->mgr->userdata);
 
-        // check if mgr.userdata is (unlikely) NULL
         if (!self)
             return;
 
         if (mg_match(hm->uri, mg_str("/web/#"), NULL))
         {
+            dsyslog("Webserver access on %.*s", (int)hm->uri.len, hm->uri.buf);
             struct mg_http_serve_opts opts = {};
-            // Setze das Wurzelverzeichnis auf dein lokales Web-Verzeichnis
-            // Beispiel: "/var/www/html" oder ein Pfad aus deiner Konfiguration
-            opts.root_dir = "/var/lib/vdr/plugins/websocket/web/";
 
-            // mg_http_serve_dir übernimmt den Schutz gegen "../" automatisch!
+            opts.root_dir = self->webDir.c_str();
+
             mg_http_serve_dir(c, hm, &opts);
             return;
         }
@@ -631,7 +629,7 @@ void cWebsocketThread::SendInitialState(struct mg_connection *c)
         else
         {
             j["replaying"] = false;
-            std::string cName;
+            std::string cName{""};
             int cNum = 0;
             {
                 LOCK_CHANNELS_READ;
@@ -747,16 +745,23 @@ void cWebsocketThread::Action()
 
     while (Running())
     {
-        if (statusMonitor)
-        {
-            statusMonitor->CheckTimer();
-        }
-
+        bool shutdownRequested = false;
         while (auto ev = queue.try_pop())
         {
             if (ev->type == eEventType::PluginStop)
+            {
+                shutdownRequested = true;
                 break;
+            }
             processEvent(*ev);
+        }
+
+        if (shutdownRequested)
+            break;
+
+        if (statusMonitor)
+        {
+            statusMonitor->CheckTimer();
         }
 
         mg_mgr_poll(&mgr, 50);
@@ -813,11 +818,15 @@ void cWebsocketThread::Action()
                 int cNum = 0;
                 {
                     LOCK_CHANNELS_READ;
-                    const cChannel *channel = Channels->GetByNumber(cDevice::PrimaryDevice()->CurrentChannel());
-                    if (channel)
+                    cDevice *primary = cDevice::PrimaryDevice();
+                    if (primary && Channels)
                     {
-                        cName = safeStr(channel->Name());
-                        cNum = channel->Number();
+                        const cChannel *channel = Channels->GetByNumber(primary->CurrentChannel());
+                        if (channel)
+                        {
+                            cName = safeStr(channel->Name());
+                            cNum = channel->Number();
+                        }
                     }
                 }
 

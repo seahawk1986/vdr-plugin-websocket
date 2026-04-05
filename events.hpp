@@ -37,7 +37,17 @@ struct DeviceEvent
     int number;
     bool status;
 
-    DeviceEvent(eEventType t, std::string n = "", std::string f = "", int num = 0, bool s = false)
+    DeviceEvent(eEventType t, const char *n = nullptr, const char *f = nullptr, int num = 0, bool s = false)
+        : type(t),
+          name(n ? n : ""),     // Sicherer Check auf nullptr
+          fileName(f ? f : ""), // Sicherer Check auf nullptr
+          number(num),
+          status(s)
+    {
+    }
+
+    // Falls du auch std::string direkt übergibst:
+    DeviceEvent(eEventType t, std::string n, std::string f = "", int num = 0, bool s = false)
         : type(t), name(std::move(n)), fileName(std::move(f)), number(num), status(s) {}
 };
 
