@@ -395,61 +395,7 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
             const cRecording *recording = Recordings->GetByName(ev.fileName.c_str());
             if (recording)
             {
-                const cRecordingInfo *info = recording->Info();
-                if (info)
-                {
-
-                    Debug("building recording json");
-                    j["recording"] = {
-                        {"title", safeStr(info->Title())},
-                        {"subtitle", safeStr(info->ShortText())},
-                        {"name", safeStr(recording->Name())},
-                        {"description", safeStr(info->Description())},
-                        {"start", recording->Start()},
-                        {"duration", recording->LengthInSeconds()},
-                        {"fps", info->FramesPerSecond()},
-                        {"sizeMB", recording->FileSizeMB()},
-                        {"isNew", recording->IsNew()},
-                        {"isEdited", recording->IsEdited()},
-                        {"components", json::object()},
-                    };
-                    Debug("building component json");
-
-                    LOCK_THREAD;
-                    const cComponents *components = info->Components();
-                    if ((components) && (components->NumComponents() > 0))
-                    {
-                        for (int comp = 0; comp < components->NumComponents(); comp++)
-                        {
-                            tComponent *component = components->Component(comp);
-                            if (component)
-                            {
-                                std::string key = std::to_string(comp);
-                                json cObj = json::object();
-                                cObj["stream"] = (int)component->stream;
-                                cObj["type"] = (int)component->type;
-
-                                if (component->language[0] != '\0')
-                                    cObj["language"] = std::string(component->language, strnlen(component->language, 4));
-
-                                if (component->description && component->description[0] != '\0')
-                                {
-                                    try
-                                    {
-                                        cObj["description"] = std::string(component->description);
-                                    }
-                                    catch (...)
-                                    {
-                                        Debug("String error in component %d", comp);
-                                        cObj["description"] = "encoding error";
-                                    }
-                                }
-
-                                j["recording"]["components"][key] = cObj;
-                            }
-                        }
-                    }
-                }
+                j["recording"] = collectRecording(recording);
             }
         }
         break;
@@ -458,6 +404,10 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
         isReplaying = false;
         j["type"] = "replay";
         j["status"] = "stopped";
+        {
+            LOCK_RECORDINGS_READ;
+            j["recordings"] = collectRecordings(Recordings);
+        }
         return j;
 
     case eEventType::TimerChange:
@@ -466,6 +416,7 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
         j["timer_name"] = ev.name;
         j["timer_id"] = ev.number;
         j["timer_change"] = ev.status;
+        j["timers"] = json::array();
         {
             LOCK_TIMERS_READ;
             auto Timer = Timers->GetById(ev.number);
@@ -479,6 +430,8 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
                     j["timer_channel_name"] = channel->Name() ? cString(channel->Name()) : channel_id.ToString();
                 }
             }
+
+            j["timers"] = collectTimers(Timers);
         }
         return j;
 
@@ -490,6 +443,10 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
         j["filename"] = ev.fileName;
         j["recording_active"] = ev.status;
         j["tuner"] = ev.number;
+        {
+            LOCK_RECORDINGS_READ;
+            j["recordings"] = collectRecordings(Recordings);
+        }
         return j;
     }
 
@@ -577,11 +534,16 @@ void cWebsocketThread::SendInitialState(struct mg_connection *c)
             }
             nTimers++;
         }
+        j["timers"] = collectTimers(Timers);
     }
     j["is_recording"] = isAnythingRecording;
     j["active_recordings"] = nRecordings;
     j["n_timer"] = nTimers;
 
+    {
+        LOCK_RECORDINGS_READ;
+        j["recordings"] = collectRecordings(Recordings);
+    }
     {
         cDevice *primary = cDevice::PrimaryDevice();
         if (primary)
