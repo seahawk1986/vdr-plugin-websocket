@@ -25,3 +25,9 @@ VDR Plugin 'websocket' Revision History
 - fix crash on plugin/vdr shutdown
 - Add ability to act as a webserver for the webfrontend.
   Place the necessary data in the WEBDIR passed to the plugin via it's start arguments
+
+2026-04-06 Version 0.0.6
+- fix crash in recording component data
+
+2026-04-06 Version 0.0.7
+- send info about recordings and timers
