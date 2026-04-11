@@ -273,7 +273,7 @@ json cWebsocketThread::BuildStatusJson(const DeviceEvent &ev)
             for (const cChannel *c = Channels->First(); c; c = Channels->Next(c))
             {
                 // compare the name (VDR names can contain provider infos after a ';')
-                if (c->Name() && strcmp(safeStr(c->Name()), ev.name.c_str()) == 0)
+                if (c->Name() && strcmp(safeStr(c->Name()).c_str(), ev.name.c_str()) == 0)
                 {
                     channel = c;
                     break;
