@@ -107,7 +107,7 @@ private:
                 };
                 Debug("building component json");
 
-                LOCK_THREAD;
+                // LOCK_THREAD;
                 const cComponents *components = info->Components();
                 if ((components) && (components->NumComponents() > 0))
                 {
