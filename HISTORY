@@ -34,3 +34,6 @@ VDR Plugin 'websocket' Revision History
 
 2026-04-20 Version 0.0.8
 - improve handling of strings if the system doesn't use an UTF-8 locale
+
+2026-04-20 Version 0.0.9
+- add access control via allowed_hosts.conf file

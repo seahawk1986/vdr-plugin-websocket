@@ -21,6 +21,7 @@ PKGCFG = $(if $(VDRDIR),$(shell $(PKG_CONFIG) --variable=$(1) $(VDRDIR)/vdr.pc),
 LIBDIR = $(call PKGCFG,libdir)
 LOCDIR = $(call PKGCFG,locdir)
 PLGCFG = $(call PKGCFG,plgcfg)
+CONFDIR = $(call PKGCFG,configdir)
 #
 TMPDIR ?= /tmp
 
@@ -55,6 +56,7 @@ MONGOOSE_DIR = mongoose
 INCLUDES += -I$(MONGOOSE_DIR) -I/usr/include
 
 DEFINES += -DPLUGIN_NAME_I18N='"$(PLUGIN)"' -DMG_ENABLE_LOG=0
+DEFINES += -DALLOWED_HOSTS_CONF='"$(CONFDIR)/plugins/$(PLUGIN)/allowed_hosts.conf"'
 
 ### The object files (add further files here):
 

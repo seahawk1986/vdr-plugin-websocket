@@ -28,6 +28,8 @@ Configuration:
   -l DIR,   --logodir=DIR   path for channel logos folder (default: /var/lib/vdr/channellogos/)
   -w WEBDIR --webdir=WEBDIR path for the webfrontend that should be served by the plugin's webserver
 
+Copy the config/allowed_hosts.conf file to the plugin's configdir, e.g. /var/lib/vdr/plugins/websocket/allowed_hosts.conf and adapt it to your needs.
+
 Frontends:
 
 https://github.com/seahawk1986/vdr-websocket-status is an example Client for vdr-plugin-websocket

@@ -7,6 +7,8 @@
 #ifdef PLUGIN_NAME_I18N
 #undef tr
 #define tr(s) I18nTranslate(s, "vdr-" PLUGIN_NAME_I18N)
+#else
+#define PLUGIN_NAME_I18N "websocket"
 #endif
 
 class cWebsocketSetupPage : public cMenuSetupPage

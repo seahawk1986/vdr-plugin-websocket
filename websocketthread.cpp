@@ -1,6 +1,7 @@
 #include "common.hpp"
 #include "statusmonitor.hpp"
 #include "websocketthread.hpp"
+#include "hostmatcher.hpp"
 #include <vdr/plugin.h>
 #include <vdr/menu.h>
 
@@ -30,13 +31,14 @@ bool isEqualCaseInsensitive(const std::string &a, const std::string &b)
     return strcasecmp(a.c_str(), b.c_str()) == 0;
 }
 
-cWebsocketThread::cWebsocketThread(EventQueue &q, cWebsocketStatusMonitor *sm, int p, std::string ld, std::string wd)
+cWebsocketThread::cWebsocketThread(EventQueue &q, cWebsocketStatusMonitor *sm, int p, std::string ld, std::string wd, HostMatcher &hm)
     : cThread("websocket-worker"),
       queue(q),
       statusMonitor(sm), // Zuweisung im Konstruktor
       port(p),
       logoDir(std::move(ld)),
-      webDir(std::move(wd))
+      webDir(std::move(wd)),
+      hostMatcher(hm)
 {
     Debug("Thread initialisiert");
 }
@@ -182,11 +184,18 @@ void cWebsocketThread::on_connect_callback(struct mg_connection *c, int ev, void
         if (!self)
             return;
 
+        if (!self->hostMatcher.isAllowed(c->rem))
+        {
+            mg_http_reply(c, 403, "", "Access Denied\n");
+            c->is_draining = 1;
+            return;
+        }
+
         // handle channel logo requests
         if (mg_match(hm->uri, mg_str("/logos/#"), NULL))
         {
             // 1. remove "/logos/" from path
-            // Wir prüfen, ob die URI überhaupt lang genug ist
+            // check if the url is long enough
             if (hm->uri.len <= 7)
             {
                 mg_http_reply(c, 400, "", "Bad Request\n");
@@ -717,7 +726,7 @@ void cWebsocketThread::Action()
     mg_mgr_init(&mgr);
     mgr.userdata = this;
     std::string url = "ws://0.0.0.0:" + std::to_string(port);
-    if (!mg_http_listen(&mgr, url.c_str(), on_connect_callback, NULL))
+    if (!mg_http_listen(&mgr, url.c_str(), on_connect_callback, this))
     {
         esyslog("ERROR during startup");
         return;

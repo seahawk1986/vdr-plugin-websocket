@@ -27,9 +27,13 @@ using nlohmann::json;
 #include "websocketthread.hpp"
 #include "menu.hpp"
 
+#ifndef ALLOWED_HOSTS_CONF
+#define ALLOWED_HOSTS_CONF "/var/lib/vdr/plugins/websocket/allowed_hosts.conf"
+#endif
+
 tWebsocketConfig WebsocketConfig = {0};
 
-static const char *VERSION = "0.0.8";
+static const char *VERSION = "0.0.9";
 static const char *DESCRIPTION = "Send VDR status via websocket";
 static const char *MAINMENUENTRY = "Websocket";
 
@@ -42,6 +46,7 @@ private:
   std::string logoDir{"/var/lib/vdr/channellogos/"};
   std::string webDir{"/var/lib/vdr/plugins/websocket/web/"};
   std::unique_ptr<cWebsocketThread> workerThread;
+  HostMatcher hostMatcher;
 public:
   cPluginWebsocket() = default;
   virtual ~cPluginWebsocket() override = default;
@@ -122,8 +127,9 @@ bool cPluginWebsocket::Initialize(void)
 bool cPluginWebsocket::Start(void)
 {
   Debug("Starting Server on port %d", port);
+  hostMatcher.loadFromFile(ALLOWED_HOSTS_CONF);
   statusMonitor = std::make_unique<cWebsocketStatusMonitor>(eventQueue);
-  workerThread = std::make_unique<cWebsocketThread>(eventQueue, statusMonitor.get(), port, logoDir, webDir);
+  workerThread = std::make_unique<cWebsocketThread>(eventQueue, statusMonitor.get(), port, logoDir, webDir, hostMatcher);
   workerThread->Start();
   return true;
 }
@@ -186,6 +192,8 @@ bool cPluginWebsocket::Service(const char *Id, void *Data)
 const char **cPluginWebsocket::SVDRPHelpPages(void)
 {
   static const char *HelpPages[] = {
+      "HOSTS",
+      "    Reloads the allowed_host.conf.",
       "RELOAD",
       "    Reloads the channel logo cache from the configured directory.",
       "LIST",
@@ -219,6 +227,20 @@ cString cPluginWebsocket::SVDRPCommand(const char *Command, const char *Option, 
     }
     ReplyCode = 554;
     return "Worker thread not running";
+  }
+  else if (strcasecmp(Command, "HOSTS") == 0)
+  {
+
+    if (hostMatcher.loadFromFile(ALLOWED_HOSTS_CONF))
+    {
+      ReplyCode = 900; // Success
+      return "Allowed hosts reloaded successfully";
+    }
+    else
+    {
+      ReplyCode = 500; // Error
+      return "Failed to reload allowed hosts";
+    }
   }
 
   return NULL; // VDR shows the standard help in this case

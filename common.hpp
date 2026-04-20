@@ -2,22 +2,13 @@
 
 #include <vdr/tools.h>
 #include <stdarg.h>
-#include <vector>
 #include <string>
 #include <nlohmann/json.hpp>
 #include "config.hpp"
 
 using json = nlohmann::json;
 
-// static constexpr auto safeStr = [](const char *s)
-// {
-//     if (!s)
-//         return std::string{""};
-//     return std::string(json(s, nlohmann::json::error_handler_t::replace));
-// };
-
-inline void
-Debug(const char *Format, ...)
+inline void Debug(const char *Format, ...)
 {
     if (WebsocketConfig.ShowDebug)
     {

@@ -17,6 +17,7 @@
 #include "events.hpp"
 #include "osdState.hpp"
 #include "statusmonitor.hpp"
+#include "hostmatcher.hpp"
 
 using json = nlohmann::json;
 
@@ -30,6 +31,7 @@ private:
     int port;
     std::string logoDir;
     std::string webDir;
+    HostMatcher &hostMatcher;
     struct mg_mgr mgr;
 
     // logo cache and updates
@@ -162,7 +164,7 @@ protected:
     Action() override;
 
 public:
-    cWebsocketThread(EventQueue &q, cWebsocketStatusMonitor *sm, int p, std::string ld, std::string wd);
+    cWebsocketThread(EventQueue &q, cWebsocketStatusMonitor *sm, int p, std::string ld, std::string wd, HostMatcher &hm);
     virtual ~cWebsocketThread();
 
     void SendInitialState(struct mg_connection *c);
