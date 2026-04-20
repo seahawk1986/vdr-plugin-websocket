@@ -189,17 +189,18 @@ bool cPluginWebsocket::Service(const char *Id, void *Data)
   return false;
 }
 
+static const char *HelpPages[] = {
+    "HOSTS\n"
+    "    Reloads the allowed_host.conf.",
+    "RELOAD\n"
+    "    Reloads the channel logo cache from the configured directory.",
+    "LIST\n"
+    "    Shows the number of currently connected WebSocket clients.",
+    NULL // This array has to end with a NULL
+};
+
 const char **cPluginWebsocket::SVDRPHelpPages(void)
 {
-  static const char *HelpPages[] = {
-      "HOSTS",
-      "    Reloads the allowed_host.conf.",
-      "RELOAD",
-      "    Reloads the channel logo cache from the configured directory.",
-      "LIST",
-      "    Shows the number of currently connected WebSocket clients.",
-      NULL // This array has to end with a NULL
-  };
   return HelpPages;
 }
 
