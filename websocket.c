@@ -29,7 +29,7 @@ using nlohmann::json;
 
 tWebsocketConfig WebsocketConfig = {0};
 
-static const char *VERSION = "0.0.2";
+static const char *VERSION = "0.0.8";
 static const char *DESCRIPTION = "Send VDR status via websocket";
 static const char *MAINMENUENTRY = "Websocket";
 
